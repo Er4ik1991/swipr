@@ -162,11 +162,14 @@ const validPhone = (v) => /^\+?[\d\s\-()]{7,15}$/.test(v);
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 export default function App() {
+  // screens: "pick" | "guestFeed" | "register" | "profileSetup" | "app"
   const [screen, setScreen] = useState("pick");
   const [role, setRole] = useState(null);
   const [user, setUser] = useState(null);
   const [isDark, setIsDark] = useState(false);
   const [, forceUpdate] = useState(0);
+  // item that triggered registration gate (so we can process the like after sign-up)
+  const [pendingLike, setPendingLike] = useState(null);
 
   const toggleTheme = () => {
     const next = !isDark;
@@ -175,10 +178,37 @@ export default function App() {
     forceUpdate((n) => n + 1);
   };
 
-  const handleRolePick = (r) => { setRole(r); setScreen("register"); };
-  const handleRegistered = (u) => { setUser(u); setScreen("app"); };
+  const handleRolePick = (r) => {
+    setRole(r);
+    if (r === "seeker") {
+      setScreen("guestFeed"); // seeker browses without registration
+    } else {
+      setScreen("register"); // hr must register first
+    }
+  };
+
+  // called when guest seeker likes or clicks "respond"
+  const handleGuestLike = (item) => {
+    setPendingLike(item);
+    setScreen("register");
+  };
+
+  const handleRegistered = (u) => {
+    setUser(u);
+    if (role === "seeker") {
+      setScreen("profileSetup"); // seeker fills profile after sign-up
+    } else {
+      setScreen("app");
+    }
+  };
+
+  const handleProfileDone = (profile) => {
+    setUser((prev) => ({ ...prev, ...profile }));
+    setScreen("app");
+  };
+
   const handleBack = () => setScreen("pick");
-  const handleLogout = () => { setUser(null); setRole(null); setScreen("pick"); };
+  const handleLogout = () => { setUser(null); setRole(null); setPendingLike(null); setScreen("pick"); };
 
   return (
     <div style={{
@@ -194,10 +224,481 @@ export default function App() {
         boxShadow: "0 30px 80px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.04)",
         border: `10px solid ${C.shell}`, display: "flex", flexDirection: "column",
       }}>
-        {screen === "pick" && <div style={{ flex: 1, overflow: "hidden" }}><RolePick onPick={handleRolePick} /></div>}
-        {screen === "register" && <div style={{ flex: 1, overflowY: "auto" }}><RegisterScreen role={role} onBack={handleBack} onDone={handleRegistered} /></div>}
-        {screen === "app" && <MainApp role={role} user={user} onLogout={handleLogout} isDark={isDark} onToggleTheme={toggleTheme} />}
+        {screen === "pick" && (
+          <div style={{ flex: 1, overflow: "hidden" }}><RolePick onPick={handleRolePick} /></div>
+        )}
+        {screen === "guestFeed" && (
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            <GuestFeedScreen onLike={handleGuestLike} onRegister={() => setScreen("register")} />
+          </div>
+        )}
+        {screen === "register" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <RegisterScreen
+              role={role}
+              onBack={role === "seeker" ? () => setScreen("guestFeed") : handleBack}
+              onDone={handleRegistered}
+            />
+          </div>
+        )}
+        {screen === "profileSetup" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <ProfileSetupScreen user={user} onDone={handleProfileDone} />
+          </div>
+        )}
+        {screen === "app" && (
+          <MainApp
+            role={role} user={user}
+            onLogout={handleLogout}
+            isDark={isDark} onToggleTheme={toggleTheme}
+            initialLike={pendingLike}
+          />
+        )}
       </div>
+    </div>
+  );
+}
+
+const GUEST_SWIPE_LIMIT = 25;
+const guestKey = () => `swipr_guest_${new Date().toISOString().slice(0, 10)}`;
+
+// ─── GuestFeedScreen ──────────────────────────────────────────────────────────
+function GuestFeedScreen({ onLike, onRegister }) {
+  const [si, setSi] = useState(0);
+  const [drag, setDrag] = useState({ x: 0, y: 0, active: false });
+  const [exit, setExit] = useState(null);
+  const [guestSwipes, setGuestSwipes] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem(guestKey()) || "{}");
+      return s.count ?? 0;
+    } catch { return 0; }
+  });
+  const startRef = useRef(null);
+
+  const rawDeck = COMPANIES.filter((c) => c.moderation === "approved");
+  const current = rawDeck[si];
+  const next = rawDeck[si + 1];
+  const swipesLeft = Math.max(0, GUEST_SWIPE_LIMIT - guestSwipes);
+  const limitReached = swipesLeft === 0;
+
+  const saveGuest = (n) => {
+    setGuestSwipes(n);
+    localStorage.setItem(guestKey(), JSON.stringify({ count: n }));
+  };
+
+  const commit = (dir) => {
+    if (exit || limitReached) return;
+    setExit(dir);
+    saveGuest(guestSwipes + 1);
+    if (dir === "like" && current) {
+      setTimeout(() => { onLike(current); }, 200);
+      return;
+    }
+    setTimeout(() => { setSi((v) => v + 1); setDrag({ x: 0, y: 0, active: false }); setExit(null); }, 280);
+  };
+
+  const onDown = (e) => {
+    if (exit) return;
+    const p = e.touches ? e.touches[0] : e;
+    startRef.current = { x: p.clientX, y: p.clientY };
+    setDrag({ x: 0, y: 0, active: true });
+  };
+  const onMove = (e) => {
+    if (!drag.active || !startRef.current) return;
+    const p = e.touches ? e.touches[0] : e;
+    setDrag({ x: p.clientX - startRef.current.x, y: p.clientY - startRef.current.y, active: true });
+  };
+  const onUp = () => {
+    if (!drag.active) return;
+    if (drag.x > 110) return commit("like");
+    if (drag.x < -110) return commit("skip");
+    setDrag({ x: 0, y: 0, active: false });
+  };
+
+  let tx = drag.x, ty = drag.y, rot = drag.x / 18;
+  let trans = drag.active ? "none" : "transform .28s cubic-bezier(.2,.7,.3,1)";
+  if (exit === "like") { tx = 640; rot = 22; }
+  if (exit === "skip") { tx = -640; rot = -22; }
+
+  const likeOpacity = Math.min(Math.max(drag.x / 110, 0), 1);
+  const skipOpacity = Math.min(Math.max(-drag.x / 110, 0), 1);
+  const dragDist = Math.sqrt(drag.x ** 2 + drag.y ** 2);
+  const btnOpacity = drag.active ? Math.max(0, 1 - dragDist / 60) : 1;
+
+  return (
+    <div style={{ position: "relative", height: "100%", overflow: "hidden" }}>
+      {/* Шапка */}
+      <div style={{
+        position: "absolute", top: 0, left: 0, right: 0, zIndex: 10,
+        padding: "14px 16px 10px",
+        background: "linear-gradient(to bottom, rgba(251,250,247,.96) 70%, transparent)",
+        pointerEvents: "none",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, pointerEvents: "auto" }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: 8, background: C.brand,
+            display: "grid", placeItems: "center", color: "#fff", flexShrink: 0,
+          }}>
+            <Briefcase size={15} />
+          </div>
+          <span style={{ fontWeight: 800, fontSize: 17, color: C.ink, letterSpacing: -0.3 }}>
+            Свайп<span style={{ color: C.brand }}>Джоб</span>
+          </span>
+
+          {/* счётчик гостевых свайпов */}
+          <div style={{
+            marginLeft: "auto", display: "flex", alignItems: "center", gap: 5,
+            background: swipesLeft <= 5 ? "#FFF3E0" : "rgba(255,255,255,.8)",
+            border: `1px solid ${swipesLeft <= 5 ? "#ED8936" : C.line}`,
+            borderRadius: 20, padding: "3px 10px 3px 8px",
+          }}>
+            <Zap size={12} color={swipesLeft <= 5 ? "#ED8936" : C.muted} fill={swipesLeft <= 5 ? "#ED8936" : "none"} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: swipesLeft <= 5 ? "#ED8936" : C.muted }}>
+              {swipesLeft} из {GUEST_SWIPE_LIMIT}
+            </span>
+          </div>
+
+          <button onClick={onRegister} style={{
+            fontSize: 11, fontWeight: 700, color: "#fff", background: C.brand,
+            border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer",
+          }}>Войти</button>
+        </div>
+      </div>
+
+      {/* Колода */}
+      <div style={{ position: "absolute", inset: 0 }}>
+        {(!current || si >= rawDeck.length) ? (
+          <div style={{
+            position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", padding: 32, textAlign: "center",
+          }}>
+            <div style={{ width: 64, height: 64, borderRadius: 18, background: `${C.brand}14`, display: "grid", placeItems: "center", marginBottom: 16 }}>
+              <Star size={30} color={C.brand} />
+            </div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: C.ink }}>Пока всё просмотрено</h3>
+            <p style={{ margin: "8px 0 20px", fontSize: 13.5, color: C.muted, lineHeight: 1.5 }}>
+              Зарегистрируйтесь, чтобы видеть все вакансии и откликаться
+            </p>
+            <button onClick={onRegister} style={{
+              background: C.brand, color: "#fff", border: "none", borderRadius: 14,
+              padding: "13px 28px", fontSize: 15, fontWeight: 800, cursor: "pointer",
+            }}>
+              Зарегистрироваться
+            </button>
+          </div>
+        ) : (
+          <>
+            {next && (
+              <div style={{ position: "absolute", inset: 0 }}>
+                <CardBody item={next} mode="seeker" dim fullscreen />
+              </div>
+            )}
+            <div
+              onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+              onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
+              style={{
+                position: "absolute", inset: 0,
+                cursor: drag.active ? "grabbing" : "grab",
+                transform: `translate(${tx}px,${ty}px) rotate(${rot}deg)`,
+                transition: trans, touchAction: "none", zIndex: 2,
+              }}
+            >
+              <Stamp text="ОТКЛИК" color={C.apply} opacity={likeOpacity} side="left" />
+              <Stamp text="ПРОПУСК" color={C.skip} opacity={skipOpacity} side="right" />
+              <CardBody item={current} mode="seeker" fullscreen />
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Кнопки */}
+      {current && si < rawDeck.length && (
+        <div style={{
+          position: "absolute", bottom: 24, left: 0, right: 0, zIndex: 10,
+          display: "flex", justifyContent: "center", alignItems: "center", gap: 22,
+          opacity: btnOpacity, transition: drag.active ? "none" : "opacity .2s",
+          pointerEvents: btnOpacity < 0.1 ? "none" : "auto",
+        }}>
+          <ActionBtn onClick={() => commit("skip")} bg="rgba(255,255,255,.92)" ring={C.line} color={C.skip} size={60}>
+            <X size={26} strokeWidth={2.5} />
+          </ActionBtn>
+          <ActionBtn onClick={() => commit("like")} bg={C.apply} ring={C.apply} color="#fff" size={70}>
+            <Heart size={28} fill="#fff" strokeWidth={0} />
+          </ActionBtn>
+          <ActionBtn onClick={() => setSi(0)} bg="rgba(255,255,255,.92)" ring={C.line} color={C.brand} size={60}>
+            <RotateCcw size={20} strokeWidth={2.5} />
+          </ActionBtn>
+        </div>
+      )}
+
+      {/* Баннер-подсказка внизу */}
+      <div style={{
+        position: "absolute", bottom: 102, left: 16, right: 16, zIndex: 10,
+        background: `${C.brand}ee`, borderRadius: 14, padding: "10px 16px",
+        display: "flex", alignItems: "center", gap: 10,
+        boxShadow: "0 4px 20px rgba(108,92,231,.3)",
+        pointerEvents: "none",
+        opacity: guestSwipes === 0 ? 1 : 0,
+        transition: "opacity .4s",
+      }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#fff", lineHeight: 1.4 }}>
+          Листайте вакансии. Для отклика — зарегистрируйтесь бесплатно.
+        </span>
+      </div>
+
+      {/* Лимит исчерпан */}
+      {limitReached && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 30,
+          background: "rgba(251,250,247,.96)", backdropFilter: "blur(6px)",
+          display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", padding: 32, gap: 16,
+        }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: 20, background: `${C.brand}14`,
+            display: "grid", placeItems: "center",
+          }}>
+            <Briefcase size={32} color={C.brand} />
+          </div>
+          <h3 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: C.ink, textAlign: "center" }}>
+            Вы просмотрели {GUEST_SWIPE_LIMIT} вакансий
+          </h3>
+          <p style={{ margin: 0, fontSize: 14, color: C.muted, textAlign: "center", lineHeight: 1.5 }}>
+            Зарегистрируйтесь бесплатно, чтобы видеть все предложения и откликаться
+          </p>
+          <button onClick={onRegister} style={{
+            width: "100%", padding: "14px 0", borderRadius: 14, border: "none",
+            background: C.brand, color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer",
+          }}>
+            Зарегистрироваться бесплатно
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ProfileSetupScreen ───────────────────────────────────────────────────────
+function ProfileSetupScreen({ user, onDone }) {
+  const [name, setName] = useState("");
+  const [position, setPosition] = useState("");
+  const [areaId, setAreaId] = useState(null);
+  const [selectedSkills, setSelectedSkills] = useState([]);
+  const [query, setQuery] = useState("");
+  const [step, setStep] = useState(1); // 1: basic info, 2: skills
+  const [errors, setErrors] = useState({});
+
+  const suggestions = query.trim()
+    ? DICT_SKILLS.filter((s) =>
+        s.name.toLowerCase().includes(query.toLowerCase()) && !selectedSkills.includes(s.id)
+      )
+    : [];
+
+  const addSkill = (id) => { if (!selectedSkills.includes(id)) setSelectedSkills((p) => [...p, id]); setQuery(""); };
+  const removeSkill = (id) => setSelectedSkills((p) => p.filter((s) => s !== id));
+
+  const validateStep1 = () => {
+    const e = {};
+    if (!name.trim()) e.name = "Введите имя";
+    if (!position.trim()) e.position = "Укажите желаемую должность";
+    return e;
+  };
+
+  const handleNextStep = () => {
+    const e = validateStep1();
+    if (Object.keys(e).length) { setErrors(e); return; }
+    setErrors({});
+    setStep(2);
+  };
+
+  const handleDone = () => {
+    onDone({ name, position, areaId, skills: selectedSkills });
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", padding: "32px 24px 30px", minHeight: "100%" }}>
+      {/* Заголовок */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 11, background: `${C.brand}14`,
+            display: "grid", placeItems: "center",
+          }}>
+            <User size={18} color={C.brand} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.brand }}>Шаг {step} из 2</div>
+            <div style={{ height: 4, background: C.line, borderRadius: 2, marginTop: 4 }}>
+              <div style={{
+                height: "100%", borderRadius: 2, background: C.brand,
+                width: step === 1 ? "50%" : "100%", transition: "width .3s",
+              }} />
+            </div>
+          </div>
+        </div>
+        <h2 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: -0.4 }}>
+          {step === 1 ? "Расскажите о себе" : "Ваши навыки"}
+        </h2>
+        <p style={{ margin: 0, fontSize: 13.5, color: C.muted }}>
+          {step === 1
+            ? "Это поможет работодателям найти вас"
+            : "Вакансии с совпадающими навыками будут выше в ленте"}
+        </p>
+      </div>
+
+      {step === 1 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <Field
+            label="Имя"
+            error={errors.name}
+            input={
+              <input
+                placeholder="Как вас зовут?"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                style={inputStyle(!!errors.name)}
+              />
+            }
+          />
+          <Field
+            label="Желаемая должность"
+            error={errors.position}
+            input={
+              <input
+                placeholder="Например: Мастер маникюра"
+                value={position}
+                onChange={(e) => setPosition(e.target.value)}
+                style={inputStyle(!!errors.position)}
+              />
+            }
+          />
+
+          {/* Город */}
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 8 }}>
+              Город
+            </label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {DICT_AREAS.map((a) => {
+                const active = areaId === a.id;
+                return (
+                  <button key={a.id} onClick={() => setAreaId(active ? null : a.id)} style={{
+                    fontSize: 13, fontWeight: 600, padding: "7px 15px", borderRadius: 20, cursor: "pointer",
+                    border: `1.5px solid ${active ? C.brand : C.line}`,
+                    background: active ? `${C.brand}14` : "#fff",
+                    color: active ? C.brand : C.muted,
+                    transition: "all .15s",
+                  }}>
+                    {a.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <button onClick={handleNextStep} style={{
+            marginTop: 8, width: "100%", padding: "14px 0", borderRadius: 14, border: "none",
+            background: C.brand, color: "#fff", fontSize: 15.5, fontWeight: 800, cursor: "pointer",
+          }}>
+            Далее →
+          </button>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Выбранные навыки */}
+          {selectedSkills.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {selectedSkills.map((id) => (
+                <span key={id} style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  fontSize: 13, fontWeight: 700, color: C.brand,
+                  background: `${C.brand}14`, border: `1.5px solid ${C.brand}30`,
+                  padding: "5px 10px 5px 12px", borderRadius: 20,
+                }}>
+                  {skillName(id)}
+                  <button onClick={() => removeSkill(id)} style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    color: C.brand, display: "grid", placeItems: "center", padding: 0,
+                  }}>
+                    <X size={13} strokeWidth={2.5} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Autocomplete */}
+          <div style={{ position: "relative" }}>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Начните вводить навык…"
+              style={{ ...inputStyle(false), padding: "10px 14px" }}
+            />
+            {suggestions.length > 0 && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+                background: "#fff", borderRadius: 12, border: `1.5px solid ${C.line}`,
+                boxShadow: "0 8px 24px rgba(0,0,0,.10)", zIndex: 20, overflow: "hidden",
+              }}>
+                {suggestions.map((s) => (
+                  <button key={s.id} onClick={() => addSkill(s.id)} style={{
+                    width: "100%", display: "block", padding: "10px 14px",
+                    background: "none", border: "none", cursor: "pointer",
+                    textAlign: "left", fontSize: 14, fontWeight: 600, color: C.ink,
+                  }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "#F5F3EF"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Все навыки */}
+          <div>
+            <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.6 }}>
+              Выберите из списка
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {DICT_SKILLS.map((s) => {
+                const selected = selectedSkills.includes(s.id);
+                return (
+                  <button key={s.id} onClick={() => selected ? removeSkill(s.id) : addSkill(s.id)} style={{
+                    fontSize: 13, fontWeight: 600, padding: "6px 13px", borderRadius: 20, cursor: "pointer",
+                    border: `1.5px solid ${selected ? C.brand : C.line}`,
+                    background: selected ? `${C.brand}14` : "#fff",
+                    color: selected ? C.brand : C.muted,
+                    transition: "all .15s",
+                  }}>
+                    {s.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button onClick={() => setStep(1)} style={{
+              padding: "13px 0", borderRadius: 14, border: `1.5px solid ${C.line}`,
+              background: "#fff", color: C.muted, fontSize: 14, fontWeight: 700, cursor: "pointer",
+              width: 52, flexShrink: 0,
+            }}>
+              ←
+            </button>
+            <button onClick={handleDone} style={{
+              flex: 1, padding: "13px 0", borderRadius: 14, border: "none",
+              background: C.brand, color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer",
+            }}>
+              {selectedSkills.length > 0 ? "Готово — в ленту!" : "Пропустить и войти"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -277,8 +778,8 @@ function RolePick({ onPick }) {
 function RegisterScreen({ role, onBack, onDone }) {
   const isSeeker = role === "seeker";
 
-  // tab: 'email' | 'phone'
-  const [tab, setTab] = useState("email");
+  // seekers: email-only; hr: email or phone
+  const [loginTab, setLoginTab] = useState("email");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -291,7 +792,7 @@ function RegisterScreen({ role, onBack, onDone }) {
 
   const validate = () => {
     const e = {};
-    if (tab === "email") {
+    if (isSeeker || loginTab === "email") {
       if (!email) e.login = "Введите e-mail";
       else if (!validEmail(email)) e.login = "Некорректный e-mail";
     } else {
@@ -313,11 +814,11 @@ function RegisterScreen({ role, onBack, onDone }) {
     setTimeout(() => {
       setLoading(false);
       setDone(true);
-      setTimeout(() => onDone({ login: tab === "email" ? email : phone, role }), 1200);
+      const login = (isSeeker || loginTab === "email") ? email : phone;
+      setTimeout(() => onDone({ login, role }), 1200);
     }, 900);
   };
 
-  const roleLabel = isSeeker ? "соискателя" : "нанимателя";
   const roleBg = isSeeker ? C.brand : C.apply;
 
   if (done) {
@@ -329,8 +830,12 @@ function RegisterScreen({ role, onBack, onDone }) {
         }}>
           <CheckCircle2 size={40} color={roleBg} />
         </div>
-        <h2 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 800, color: C.ink }}>Готово!</h2>
-        <p style={{ margin: 0, fontSize: 14, color: C.muted, textAlign: "center" }}>Аккаунт создан, входим…</p>
+        <h2 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 800, color: C.ink }}>
+          {isSeeker ? "Почти готово!" : "Готово!"}
+        </h2>
+        <p style={{ margin: 0, fontSize: 14, color: C.muted, textAlign: "center" }}>
+          {isSeeker ? "Аккаунт создан. Заполним профиль…" : "Аккаунт создан, входим…"}
+        </p>
       </div>
     );
   }
@@ -346,62 +851,81 @@ function RegisterScreen({ role, onBack, onDone }) {
           <ChevronLeft size={18} />
         </button>
         <div style={{
-          flex: 1, height: 36, borderRadius: 11,
-          background: `${roleBg}14`,
+          flex: 1, height: 36, borderRadius: 11, background: `${roleBg}14`,
           display: "flex", alignItems: "center", paddingLeft: 12, gap: 8,
         }}>
           {isSeeker ? <User size={15} color={roleBg} /> : <Building2 size={15} color={roleBg} />}
           <span style={{ fontSize: 13, fontWeight: 700, color: roleBg }}>
-            Регистрация {roleLabel}
+            {isSeeker ? "Регистрация соискателя" : "Регистрация нанимателя"}
           </span>
         </div>
       </div>
 
       <h2 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: -0.4 }}>
-        Создайте аккаунт
+        {isSeeker ? "Создайте аккаунт" : "Войдите в аккаунт"}
       </h2>
       <p style={{ margin: "0 0 24px", fontSize: 13.5, color: C.muted }}>
-        Войдите через почту или номер телефона
+        {isSeeker
+          ? "Введите e-mail и придумайте пароль"
+          : "Войдите через почту или номер телефона"}
       </p>
 
-      {/* Login-method tabs */}
-      <div style={{
-        display: "flex", gap: 0, background: C.line, borderRadius: 12, padding: 3, marginBottom: 20,
-      }}>
-        {[
-          { key: "email", label: "E-mail", Icon: Mail },
-          { key: "phone", label: "Телефон", Icon: Phone },
-        ].map(({ key, label, Icon }) => (
-          <button key={key} onClick={() => { setTab(key); setErrors({}); }} style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            padding: "9px 0", borderRadius: 10, border: "none", cursor: "pointer",
-            fontWeight: 700, fontSize: 13.5,
-            background: tab === key ? "#fff" : "transparent",
-            color: tab === key ? C.ink : C.muted,
-            boxShadow: tab === key ? "0 2px 8px rgba(0,0,0,.08)" : "none",
-            transition: "all .18s",
-          }}>
-            <Icon size={15} /> {label}
-          </button>
-        ))}
-      </div>
+      {/* Login-method tabs — только для HR */}
+      {!isSeeker && (
+        <div style={{
+          display: "flex", gap: 0, background: C.line, borderRadius: 12, padding: 3, marginBottom: 20,
+        }}>
+          {[
+            { key: "email", label: "E-mail", Icon: Mail },
+            { key: "phone", label: "Телефон", Icon: Phone },
+          ].map(({ key, label, Icon }) => (
+            <button key={key} onClick={() => { setLoginTab(key); setErrors({}); }} style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              padding: "9px 0", borderRadius: 10, border: "none", cursor: "pointer",
+              fontWeight: 700, fontSize: 13.5,
+              background: loginTab === key ? "#fff" : "transparent",
+              color: loginTab === key ? C.ink : C.muted,
+              boxShadow: loginTab === key ? "0 2px 8px rgba(0,0,0,.08)" : "none",
+              transition: "all .18s",
+            }}>
+              <Icon size={15} /> {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Fields */}
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {/* Login field */}
-        <Field
-          label={tab === "email" ? "E-mail" : "Номер телефона"}
-          error={errors.login}
-          input={
-            <input
-              type={tab === "email" ? "email" : "tel"}
-              placeholder={tab === "email" ? "example@mail.ru" : "+7 900 000-00-00"}
-              value={tab === "email" ? email : phone}
-              onChange={(e) => tab === "email" ? setEmail(e.target.value) : setPhone(e.target.value)}
-              style={inputStyle(!!errors.login)}
-            />
-          }
-        />
+        {(isSeeker || loginTab === "email") ? (
+          <Field
+            label="E-mail"
+            error={errors.login}
+            input={
+              <input
+                type="email"
+                placeholder="example@mail.ru"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={inputStyle(!!errors.login)}
+              />
+            }
+          />
+        ) : (
+          <Field
+            label="Номер телефона"
+            error={errors.login}
+            input={
+              <input
+                type="tel"
+                placeholder="+7 900 000-00-00"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                style={inputStyle(!!errors.login)}
+              />
+            }
+          />
+        )}
 
         {/* Password */}
         <Field
@@ -443,7 +967,6 @@ function RegisterScreen({ role, onBack, onDone }) {
           }
         />
 
-        {/* Password strength */}
         {password.length > 0 && <PasswordStrength pwd={password} />}
       </div>
 
@@ -555,13 +1078,23 @@ function createNegotiation(role, item) {
 }
 
 // ─── MainApp ──────────────────────────────────────────────────────────────────
-function MainApp({ role, user, onLogout, isDark, onToggleTheme }) {
+function MainApp({ role, user, onLogout, isDark, onToggleTheme, initialLike }) {
   const mode = role;
   const [tab, setTab] = useState("feed");
   const [negotiations, setNegotiations] = useState([]);
   const [matchModal, setMatchModal] = useState(null);
   const [activeChat, setActiveChat] = useState(null);
-  const [userSkills, setUserSkills] = useState([]);
+  const [userSkills, setUserSkills] = useState(user?.skills ?? []);
+
+  // process a like that happened before registration
+  useEffect(() => {
+    if (initialLike) {
+      const neg = createNegotiation(mode, initialLike);
+      setNegotiations([neg]);
+      setMatchModal(neg);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const navCount = negotiations.reduce((s, n) => s + (n.hidden ? 0 : n.unread), 0);
 
