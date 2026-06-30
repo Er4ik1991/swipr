@@ -5,6 +5,7 @@ import {
   ChevronLeft, ArrowRight, Mail, Lock, Phone, Eye, EyeOff, CheckCircle2,
   Layers, MessageCircle, Send, Paperclip, MoreVertical,
   Video, Building, PhoneCall, Calendar, Link, ExternalLink,
+  SlidersHorizontal, Zap,
 } from "lucide-react";
 
 const C = {
@@ -20,62 +21,104 @@ const C = {
   err: "#E53E3E",
 };
 
+// ─── Справочники (Dictionary) ─────────────────────────────────────────────────
+const DICT_SKILLS = [
+  { id: "manicure",    name: "Маникюр" },
+  { id: "gel",         name: "Гель-лак" },
+  { id: "nail_design", name: "Nail-дизайн" },
+  { id: "barista",     name: "Бариста" },
+  { id: "latte_art",   name: "Латте-арт" },
+  { id: "specialty",   name: "Specialty-кофе" },
+  { id: "office_mgmt", name: "Офис-менеджмент" },
+  { id: "doc_flow",    name: "Документооборот" },
+  { id: "english_b2",  name: "Английский B2" },
+  { id: "mechanic",    name: "Автомеханик" },
+  { id: "diagnostics", name: "Диагностика авто" },
+  { id: "1c",          name: "1С" },
+];
+
+const DICT_AREAS = [
+  { id: "moscow",  name: "Москва" },
+  { id: "spb",     name: "Санкт-Петербург" },
+  { id: "kazan",   name: "Казань" },
+  { id: "remote",  name: "Удалённо" },
+];
+
+const skillName = (id) => DICT_SKILLS.find((s) => s.id === id)?.name ?? id;
+
 // ─── mock data ───────────────────────────────────────────────────────────────
 const COMPANIES = [
   {
     company: "Лак&Шик", logo: "ЛШ", logoBg: "#E879A8",
-    role: "Мастер маникюра", city: "Москва · Хамовники",
-    salary: "80 000 – 120 000 ₽", icon: Sparkles,
+    role: "Мастер маникюра", city: "Москва · Хамовники", areaId: "moscow",
+    salary: "80 000 – 120 000 ₽", salaryFrom: 80000, icon: Sparkles,
     photoLabel: "Рабочее место мастера", photo: ["#F7C5DE", "#E879A8"],
     blurb: "Уютный салон, своё кресло и витрина гель-лаков. График 2/2, чай и печеньки за счёт салона.",
     tags: ["Своё кресло", "График 2/2", "Премии за отзывы"],
+    skills: ["manicure", "gel", "nail_design"],
   },
   {
     company: "Кофейня «Пар»", logo: "ПР", logoBg: "#C08457",
-    role: "Бариста", city: "Санкт-Петербург · Центр",
-    salary: "60 000 – 90 000 ₽", icon: Coffee,
+    role: "Бариста", city: "Санкт-Петербург · Центр", areaId: "spb",
+    salary: "60 000 – 90 000 ₽", salaryFrom: 60000, icon: Coffee,
     photoLabel: "Барная стойка", photo: ["#E7CBA9", "#9B6B43"],
     blurb: "Specialty-кофейня у канала. Обучим латте-арту, кофе для бариста — бесплатно и без лимита.",
     tags: ["Чаевые", "Гибкий график", "Обучение"],
+    skills: ["barista", "latte_art", "specialty"],
   },
   {
     company: "IT-студия «Контур»", logo: "К", logoBg: "#5B8DEF",
-    role: "Офис-менеджер", city: "Москва · Сити",
-    salary: "70 000 – 95 000 ₽", icon: Building2,
+    role: "Офис-менеджер", city: "Москва · Сити", areaId: "moscow",
+    salary: "70 000 – 95 000 ₽", salaryFrom: 70000, icon: Building2,
     photoLabel: "Наш офис", photo: ["#BFD4F2", "#5B8DEF"],
     blurb: "Светлый open-space на 23 этаже, кухня с панорамой, ДМС с первого дня.",
     tags: ["ДМС", "5/2", "Удалёнка по пятницам"],
+    skills: ["office_mgmt", "doc_flow", "english_b2", "1c"],
   },
   {
     company: "Автосервис «Гараж 24»", logo: "Г24", logoBg: "#3FB28B",
-    role: "Автомеханик", city: "Казань",
-    salary: "90 000 – 140 000 ₽", icon: Wrench,
+    role: "Автомеханик", city: "Казань", areaId: "kazan",
+    salary: "90 000 – 140 000 ₽", salaryFrom: 90000, icon: Wrench,
     photoLabel: "Рабочий бокс", photo: ["#BCE3D4", "#2E8C6A"],
     blurb: "4 поста, современный инструмент и подъёмники. Сдельная оплата + оклад.",
     tags: ["Сдельно+оклад", "Новый инструмент", "Парковка"],
+    skills: ["mechanic", "diagnostics"],
   },
 ];
 
 const CANDIDATES = [
   {
-    name: "Анна К.", role: "Мастер маникюра", city: "Москва",
-    icon: Sparkles, photo: ["#F7C5DE", "#D45C95"], exp: "5 лет опыта",
+    name: "Анна К.", role: "Мастер маникюра", city: "Москва", areaId: "moscow",
+    icon: Sparkles, photo: ["#F7C5DE", "#D45C95"], exp: "5 лет опыта", expYears: 5,
     blurb: "Аппаратный и комбинированный маникюр, дизайн. Своя база клиентов.",
     creds: ["Сертификат: аппаратный маникюр", "Курс «Дизайн ногтей 2.0»", "Диплом колледжа"],
+    skills: ["manicure", "gel", "nail_design"],
   },
   {
-    name: "Игорь П.", role: "Офис-менеджер", city: "Москва",
-    icon: Building2, photo: ["#BFD4F2", "#3F6FCB"], exp: "3 года опыта",
+    name: "Игорь П.", role: "Офис-менеджер", city: "Москва", areaId: "moscow",
+    icon: Building2, photo: ["#BFD4F2", "#3F6FCB"], exp: "3 года опыта", expYears: 3,
     blurb: "Документооборот, закупки, travel-поддержка руководителя. Английский B2.",
     creds: ["1С: Документооборот", "Курс делопроизводства", "Английский B2"],
+    skills: ["office_mgmt", "doc_flow", "english_b2", "1c"],
   },
   {
-    name: "Марина С.", role: "Бариста", city: "Санкт-Петербург",
-    icon: Coffee, photo: ["#E7CBA9", "#8A5A33"], exp: "4 года опыта",
+    name: "Марина С.", role: "Бариста", city: "Санкт-Петербург", areaId: "spb",
+    icon: Coffee, photo: ["#E7CBA9", "#8A5A33"], exp: "4 года опыта", expYears: 4,
     blurb: "Specialty-кофе, латте-арт, работа на потоке. Открывала точку с нуля.",
     creds: ["SCA Barista Skills (Foundation)", "Курс по альтернативе", "Санкнижка"],
+    skills: ["barista", "latte_art", "specialty"],
   },
 ];
+
+// сортировка колоды по совпадению навыков с профилем пользователя
+function sortedDeck(deck, userSkills) {
+  if (!userSkills?.length) return deck;
+  return [...deck].sort((a, b) => {
+    const scoreA = (a.skills ?? []).filter((s) => userSkills.includes(s)).length;
+    const scoreB = (b.skills ?? []).filter((s) => userSkills.includes(s)).length;
+    return scoreB - scoreA;
+  });
+}
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const validEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
@@ -470,8 +513,9 @@ function MainApp({ role, user, onLogout }) {
   const mode = role;
   const [tab, setTab] = useState("feed");
   const [negotiations, setNegotiations] = useState([]);
-  const [matchModal, setMatchModal] = useState(null); // negotiation | null
-  const [activeChat, setActiveChat] = useState(null); // negotiation id | null
+  const [matchModal, setMatchModal] = useState(null);
+  const [activeChat, setActiveChat] = useState(null);
+  const [userSkills, setUserSkills] = useState([]);
 
   const navCount = negotiations.reduce((s, n) => s + (n.hidden ? 0 : n.unread), 0);
 
@@ -550,7 +594,7 @@ function MainApp({ role, user, onLogout }) {
       {/* Контент активной вкладки */}
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
         {tab === "feed" && (
-          <FeedTab mode={mode} user={user} onLogout={onLogout} onLike={handleLike} />
+          <FeedTab mode={mode} user={user} onLogout={onLogout} onLike={handleLike} userSkills={userSkills} />
         )}
         {tab === "chats" && !activeChatNeg && (
           <ChatsPlaceholder negotiations={negotiations} onOpenChat={openChat} />
@@ -571,7 +615,12 @@ function MainApp({ role, user, onLogout }) {
             }}
           />
         )}
-        {tab === "profile" && <ProfilePlaceholder user={user} role={role} />}
+        {tab === "profile" && (
+          <ProfileScreen
+            user={user} role={role}
+            userSkills={userSkills} onSkillsChange={setUserSkills}
+          />
+        )}
       </div>
 
       {/* Нижний таббар */}
@@ -693,27 +742,181 @@ function TabBar({ active, onTab, navCount }) {
   );
 }
 
+// ─── Free-tier limits ────────────────────────────────────────────────────────
+const FREE_SWIPES = 10;
+const todayKey = () => new Date().toISOString().slice(0, 10);
+
+// ─── Filter sheet ─────────────────────────────────────────────────────────────
+const SALARY_OPTIONS = [
+  { label: "Любая",   value: null },
+  { label: "60 000+", value: 60000 },
+  { label: "80 000+", value: 80000 },
+  { label: "100 000+", value: 100000 },
+];
+const EXP_OPTIONS = [
+  { label: "Любой", value: null },
+  { label: "1+ год",  value: 1 },
+  { label: "3+ года", value: 3 },
+  { label: "5+ лет",  value: 5 },
+];
+
+function FilterSheet({ open, onClose, filters, onChange, mode }) {
+  const isSeeker = mode === "seeker";
+  const roleColor = isSeeker ? C.brand : C.apply;
+
+  if (!open) return null;
+
+  const set = (key, val) => onChange({ ...filters, [key]: val });
+
+  const ChipRow = ({ label, options, field }) => (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
+        {label}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+        {options.map(({ label: l, value: v }) => {
+          const active = filters[field] === v;
+          return (
+            <button key={String(v)} onClick={() => set(field, v)} style={{
+              fontSize: 13, fontWeight: 600, padding: "6px 14px", borderRadius: 20, cursor: "pointer",
+              border: `1.5px solid ${active ? roleColor : C.line}`,
+              background: active ? `${roleColor}14` : "#fff",
+              color: active ? roleColor : C.muted,
+            }}>
+              {l}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const hasFilters = filters.city || filters.salaryMin || filters.expMin;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div onClick={onClose} style={{
+        position: "absolute", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 40,
+      }} />
+      {/* Sheet */}
+      <div style={{
+        position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 50,
+        background: C.paper, borderRadius: "20px 20px 0 0",
+        padding: "0 20px 32px", boxShadow: "0 -8px 40px rgba(0,0,0,.16)",
+      }}>
+        {/* Ручка */}
+        <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px" }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: C.line }} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 18 }}>
+          <span style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>Фильтры</span>
+          {hasFilters && (
+            <button onClick={() => onChange({ city: null, salaryMin: null, expMin: null })} style={{
+              marginLeft: "auto", fontSize: 12, fontWeight: 700, color: roleColor,
+              background: "none", border: "none", cursor: "pointer",
+            }}>
+              Сбросить
+            </button>
+          )}
+          <button onClick={onClose} style={{
+            marginLeft: hasFilters ? 12 : "auto", background: "none", border: "none", cursor: "pointer",
+            color: C.muted, display: "grid", placeItems: "center",
+          }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Город */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
+            Город
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+            {[{ label: "Все", value: null }, ...DICT_AREAS].map(({ id, name, label, value }) => {
+              const v = value !== undefined ? value : id;
+              const l = label || name;
+              const active = filters.city === v;
+              return (
+                <button key={String(v)} onClick={() => set("city", v)} style={{
+                  fontSize: 13, fontWeight: 600, padding: "6px 14px", borderRadius: 20, cursor: "pointer",
+                  border: `1.5px solid ${active ? roleColor : C.line}`,
+                  background: active ? `${roleColor}14` : "#fff",
+                  color: active ? roleColor : C.muted,
+                }}>
+                  {l}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {isSeeker && <ChipRow label="Зарплата от" options={SALARY_OPTIONS} field="salaryMin" />}
+        {!isSeeker && <ChipRow label="Опыт" options={EXP_OPTIONS} field="expMin" />}
+
+        <button onClick={onClose} style={{
+          width: "100%", padding: "14px", background: roleColor, color: "#fff",
+          borderRadius: 14, border: "none", cursor: "pointer",
+          fontSize: 15, fontWeight: 800, marginTop: 4,
+        }}>
+          Применить
+        </button>
+      </div>
+    </>
+  );
+}
+
+function applyFilters(deck, filters, mode) {
+  return deck.filter((item) => {
+    if (filters.city && item.areaId !== filters.city) return false;
+    if (mode === "seeker" && filters.salaryMin && (item.salaryFrom ?? 0) < filters.salaryMin) return false;
+    if (mode !== "seeker" && filters.expMin && (item.expYears ?? 0) < filters.expMin) return false;
+    return true;
+  });
+}
+
 // ─── Feed tab (свайп-лента) ───────────────────────────────────────────────────
-function FeedTab({ mode, user, onLogout, onLike }) {
+function FeedTab({ mode, user, onLogout, onLike, userSkills }) {
   const [si, setSi] = useState(0);
   const [hi, setHi] = useState(0);
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false });
   const [exit, setExit] = useState(null);
   const [toast, setToast] = useState(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filters, setFilters] = useState({ city: null, salaryMin: null, expMin: null });
+  const [swipesUsed, setSwipesUsed] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("swipr_swipes") || "{}");
+      return saved.date === todayKey() ? (saved.count ?? 0) : 0;
+    } catch { return 0; }
+  });
   const startRef = useRef(null);
 
-  const deck = mode === "seeker" ? COMPANIES : CANDIDATES;
+  const saveSwipes = (n) => {
+    setSwipesUsed(n);
+    localStorage.setItem("swipr_swipes", JSON.stringify({ date: todayKey(), count: n }));
+  };
+
+  const rawDeck = mode === "seeker" ? COMPANIES : CANDIDATES;
+  const filteredDeck = applyFilters(rawDeck, filters, mode);
+  const deck = sortedDeck(filteredDeck, userSkills);
   const idx = mode === "seeker" ? si : hi;
   const setIdx = mode === "seeker" ? setSi : setHi;
   const current = deck[idx];
   const next = deck[idx + 1];
 
+  const swipesLeft = Math.max(0, FREE_SWIPES - swipesUsed);
+  const limitReached = swipesLeft === 0;
+
+  const hasFilters = filters.city || filters.salaryMin || filters.expMin;
+
   const flashToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 1600); };
 
   const commit = (dir) => {
-    if (exit) return;
+    if (exit || limitReached) return;
     setExit(dir);
     if (dir === "like" && current) onLike(current);
+    saveSwipes(swipesUsed + 1);
     setTimeout(() => { setIdx((v) => v + 1); setDrag({ x: 0, y: 0, active: false }); setExit(null); }, 280);
   };
 
@@ -762,22 +965,40 @@ function FeedTab({ mode, user, onLogout, onLike }) {
         background: "linear-gradient(to bottom, rgba(251,250,247,.96) 70%, transparent)",
         pointerEvents: "none",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, pointerEvents: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, pointerEvents: "auto" }}>
           <div style={{
             width: 28, height: 28, borderRadius: 8, background: C.brand,
-            display: "grid", placeItems: "center", color: "#fff",
+            display: "grid", placeItems: "center", color: "#fff", flexShrink: 0,
           }}>
             <Briefcase size={15} />
           </div>
-          <span style={{ fontWeight: 800, fontSize: 18, color: C.ink, letterSpacing: -0.3 }}>
+          <span style={{ fontWeight: 800, fontSize: 17, color: C.ink, letterSpacing: -0.3 }}>
             Свайп<span style={{ color: C.brand }}>Джоб</span>
           </span>
-          <span style={{
-            marginLeft: "auto", fontSize: 11, fontWeight: 700, color: roleColor,
-            background: `${roleColor}18`, padding: "4px 10px", borderRadius: 20,
+
+          {/* Счётчик свайпов */}
+          <div style={{
+            marginLeft: "auto", display: "flex", alignItems: "center", gap: 5,
+            background: swipesLeft <= 3 ? "#FFF3E0" : "rgba(255,255,255,.8)",
+            border: `1px solid ${swipesLeft <= 3 ? "#ED8936" : C.line}`,
+            borderRadius: 20, padding: "3px 10px 3px 8px",
           }}>
-            {isSeeker ? "Соискатель" : "Наниматель"}
-          </span>
+            <Zap size={12} color={swipesLeft <= 3 ? "#ED8936" : C.muted} fill={swipesLeft <= 3 ? "#ED8936" : "none"} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: swipesLeft <= 3 ? "#ED8936" : C.muted }}>
+              {swipesLeft} / {FREE_SWIPES}
+            </span>
+          </div>
+
+          {/* Фильтры */}
+          <button onClick={() => setFilterOpen(true)} style={{
+            width: 32, height: 32, borderRadius: 10, cursor: "pointer",
+            background: hasFilters ? `${roleColor}18` : "rgba(255,255,255,.8)",
+            border: `1.5px solid ${hasFilters ? roleColor : C.line}`,
+            display: "grid", placeItems: "center",
+          }}>
+            <SlidersHorizontal size={15} color={hasFilters ? roleColor : C.muted} />
+          </button>
+
           <button onClick={onLogout} style={{
             fontSize: 11, fontWeight: 700, color: C.muted, background: "rgba(255,255,255,.8)",
             border: `1px solid ${C.line}`, borderRadius: 8, padding: "4px 9px", cursor: "pointer",
@@ -842,6 +1063,63 @@ function FeedTab({ mode, user, onLogout, onLike }) {
           boxShadow: "0 8px 24px rgba(0,0,0,.3)", zIndex: 20,
         }}>{toast}</div>
       )}
+
+      {/* Paywall — лимит исчерпан */}
+      {limitReached && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 30,
+          background: "rgba(251,250,247,.95)", backdropFilter: "blur(6px)",
+          display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", padding: 32, gap: 16,
+        }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: 20, background: "#FFF3E0",
+            display: "grid", placeItems: "center",
+          }}>
+            <Zap size={32} color="#ED8936" fill="#ED8936" />
+          </div>
+          <h3 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: C.ink, textAlign: "center" }}>
+            Лимит свайпов на сегодня
+          </h3>
+          <p style={{ margin: 0, fontSize: 14, color: C.muted, textAlign: "center", lineHeight: 1.5 }}>
+            В бесплатном тарифе доступно {FREE_SWIPES} свайпов в день.
+            Обновление — завтра в 00:00.
+          </p>
+          <div style={{
+            background: `linear-gradient(135deg, ${C.brand}, #9B59B6)`,
+            borderRadius: 16, padding: "18px 24px", width: "100%",
+            display: "flex", flexDirection: "column", gap: 10, alignItems: "center",
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.7)", textTransform: "uppercase", letterSpacing: 1 }}>
+              SwipeJob Plus
+            </span>
+            <span style={{ fontSize: 18, fontWeight: 900, color: "#fff" }}>
+              Безлимитные свайпы
+            </span>
+            <span style={{ fontSize: 13, color: "rgba(255,255,255,.8)", textAlign: "center" }}>
+              + Приоритет в ленте · Расширенные фильтры · Аналитика
+            </span>
+            <button style={{
+              marginTop: 4, background: "#fff", color: C.brand,
+              border: "none", borderRadius: 12, padding: "12px 28px",
+              fontSize: 15, fontWeight: 800, cursor: "pointer",
+            }}>
+              Попробовать Plus — 490 ₽/мес
+            </button>
+          </div>
+          <button onClick={() => saveSwipes(0)} style={{
+            fontSize: 12, color: C.muted, background: "none", border: "none", cursor: "pointer",
+          }}>
+            Сбросить счётчик (демо)
+          </button>
+        </div>
+      )}
+
+      {/* Фильтры */}
+      <FilterSheet
+        open={filterOpen} onClose={() => setFilterOpen(false)}
+        filters={filters} onChange={setFilters} mode={mode}
+      />
     </div>
   );
 }
@@ -1656,33 +1934,160 @@ function ChatsPlaceholder({ negotiations = [], onOpenChat }) {
   );
 }
 
-// ─── Profile placeholder (Фаза 3) ────────────────────────────────────────────
-function ProfilePlaceholder({ user, role }) {
+// ─── Profile screen ───────────────────────────────────────────────────────────
+function ProfileScreen({ user, role, userSkills, onSkillsChange }) {
   const isSeeker = role === "seeker";
+  const roleColor = isSeeker ? C.brand : C.apply;
+  const [query, setQuery] = useState("");
+
+  const suggestions = query.trim()
+    ? DICT_SKILLS.filter((s) =>
+        s.name.toLowerCase().includes(query.toLowerCase()) && !userSkills.includes(s.id)
+      )
+    : [];
+
+  const addSkill = (id) => {
+    if (!userSkills.includes(id)) onSkillsChange([...userSkills, id]);
+    setQuery("");
+  };
+  const removeSkill = (id) => onSkillsChange(userSkills.filter((s) => s !== id));
+
   return (
-    <div style={{
-      height: "100%", display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center", gap: 12, padding: 32,
-    }}>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: C.paper, overflowY: "auto" }}>
+
+      {/* Шапка профиля */}
       <div style={{
-        width: 64, height: 64, borderRadius: "50%", background: `${C.brand}14`,
-        display: "grid", placeItems: "center",
+        background: `linear-gradient(160deg, ${roleColor}22, ${roleColor}08)`,
+        padding: "32px 24px 24px", borderBottom: `1px solid ${C.line}`,
       }}>
-        <User size={30} color={C.brand} />
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{
+            width: 62, height: 62, borderRadius: "50%",
+            background: roleColor, display: "grid", placeItems: "center", color: "#fff",
+            fontSize: 22, fontWeight: 800,
+            boxShadow: `0 0 0 3px #fff, 0 0 0 5px ${roleColor}40`,
+          }}>
+            {user?.login?.[0]?.toUpperCase() ?? "?"}
+          </div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{user?.login}</div>
+            <span style={{
+              fontSize: 12, fontWeight: 700, color: roleColor,
+              background: `${roleColor}14`, padding: "3px 10px", borderRadius: 20,
+              display: "inline-block", marginTop: 4,
+            }}>
+              {isSeeker ? "Соискатель" : "Наниматель"}
+            </span>
+          </div>
+        </div>
       </div>
-      <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: C.ink }}>
-        {user?.login}
-      </h3>
-      <span style={{
-        fontSize: 12, fontWeight: 700, color: isSeeker ? C.brand : C.apply,
-        background: isSeeker ? `${C.brand}14` : `${C.apply}14`,
-        padding: "4px 12px", borderRadius: 20,
-      }}>
-        {isSeeker ? "Соискатель" : "Наниматель"}
-      </span>
-      <p style={{ margin: 0, fontSize: 13, color: C.muted, textAlign: "center" }}>
-        Профиль появится в Фазе 3
-      </p>
+
+      <div style={{ padding: "20px 20px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
+
+        {/* Блок навыков */}
+        <div>
+          <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 800, color: C.ink }}>
+            {isSeeker ? "Мои навыки" : "Ищу навыки"}
+          </h3>
+          <p style={{ margin: "0 0 12px", fontSize: 12.5, color: C.muted }}>
+            {isSeeker
+              ? "Вакансии с совпадающими навыками будут выше в ленте"
+              : "Кандидаты с совпадающими навыками будут выше в ленте"}
+          </p>
+
+          {/* Выбранные навыки */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            {userSkills.length === 0 && (
+              <span style={{ fontSize: 13, color: C.muted }}>Навыки не выбраны</span>
+            )}
+            {userSkills.map((id) => (
+              <span key={id} style={{
+                display: "flex", alignItems: "center", gap: 6,
+                fontSize: 13, fontWeight: 700, color: roleColor,
+                background: `${roleColor}14`, border: `1.5px solid ${roleColor}30`,
+                padding: "5px 10px 5px 12px", borderRadius: 20,
+              }}>
+                {skillName(id)}
+                <button onClick={() => removeSkill(id)} style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  color: roleColor, display: "grid", placeItems: "center", padding: 0,
+                }}>
+                  <X size={13} strokeWidth={2.5} />
+                </button>
+              </span>
+            ))}
+          </div>
+
+          {/* Autocomplete */}
+          <div style={{ position: "relative" }}>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Начните вводить навык…"
+              style={{ ...inputStyle(false), padding: "10px 14px" }}
+            />
+            {suggestions.length > 0 && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+                background: "#fff", borderRadius: 12, border: `1.5px solid ${C.line}`,
+                boxShadow: "0 8px 24px rgba(0,0,0,.10)", zIndex: 20, overflow: "hidden",
+              }}>
+                {suggestions.map((s) => (
+                  <button key={s.id} onClick={() => addSkill(s.id)} style={{
+                    width: "100%", display: "block", padding: "10px 14px",
+                    background: "none", border: "none", cursor: "pointer",
+                    textAlign: "left", fontSize: 14, fontWeight: 600, color: C.ink,
+                  }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "#F5F3EF"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Все навыки из справочника */}
+          <p style={{ margin: "14px 0 8px", fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.6 }}>
+            Все навыки
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {DICT_SKILLS.map((s) => {
+              const selected = userSkills.includes(s.id);
+              return (
+                <button key={s.id} onClick={() => selected ? removeSkill(s.id) : addSkill(s.id)} style={{
+                  fontSize: 13, fontWeight: 600, padding: "6px 13px", borderRadius: 20, cursor: "pointer",
+                  border: `1.5px solid ${selected ? roleColor : C.line}`,
+                  background: selected ? `${roleColor}14` : "#fff",
+                  color: selected ? roleColor : C.muted,
+                  transition: "all .15s",
+                }}>
+                  {s.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Город */}
+        <div>
+          <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 800, color: C.ink }}>Город</h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {DICT_AREAS.map((a) => (
+              <span key={a.id} style={{
+                fontSize: 13, fontWeight: 600, padding: "6px 14px", borderRadius: 20,
+                border: `1.5px solid ${C.line}`, background: "#fff", color: C.muted,
+              }}>
+                {a.name}
+              </span>
+            ))}
+          </div>
+          <p style={{ margin: "8px 0 0", fontSize: 12, color: C.muted }}>
+            Фильтр по городу — в Фазе 3.2
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1763,27 +2168,43 @@ function CardBody({ item, mode, dim, fullscreen }) {
           <p style={{ margin: "8px 0 0", fontSize: 13, lineHeight: 1.45, color: "rgba(255,255,255,.75)" }}>
             {item.blurb}
           </p>
-          {/* теги / документы */}
-          {mode === "seeker" ? (
+          {/* навыки из справочника */}
+          {item.skills?.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+              {item.skills.map((sid) => (
+                <span key={sid} style={{
+                  fontSize: 11.5, fontWeight: 700, color: "#fff",
+                  background: "rgba(255,255,255,.22)", backdropFilter: "blur(4px)",
+                  padding: "4px 10px", borderRadius: 20,
+                  border: "1px solid rgba(255,255,255,.25)",
+                }}>
+                  {skillName(sid)}
+                </span>
+              ))}
+            </div>
+          )}
+          {/* доп. теги / дипломы */}
+          {mode === "seeker" && item.tags?.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
               {item.tags.map((t) => (
                 <span key={t} style={{
-                  fontSize: 11.5, fontWeight: 600, color: "#fff",
-                  background: "rgba(255,255,255,.18)", backdropFilter: "blur(4px)",
-                  padding: "4px 10px", borderRadius: 20, border: "1px solid rgba(255,255,255,.2)",
+                  fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,.7)",
+                  background: "rgba(255,255,255,.1)", backdropFilter: "blur(4px)",
+                  padding: "3px 9px", borderRadius: 20, border: "1px solid rgba(255,255,255,.15)",
                 }}>{t}</span>
               ))}
             </div>
-          ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+          )}
+          {mode !== "seeker" && item.creds?.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
               {item.creds.map((c) => (
                 <span key={c} style={{
-                  fontSize: 11.5, fontWeight: 600, color: "#fff",
-                  background: "rgba(255,255,255,.18)", backdropFilter: "blur(4px)",
-                  padding: "4px 10px", borderRadius: 20, border: "1px solid rgba(255,255,255,.2)",
+                  fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,.7)",
+                  background: "rgba(255,255,255,.1)", backdropFilter: "blur(4px)",
+                  padding: "3px 9px", borderRadius: 20, border: "1px solid rgba(255,255,255,.15)",
                   display: "flex", alignItems: "center", gap: 5,
                 }}>
-                  <BadgeCheck size={12} color={C.apply} /> {c}
+                  <BadgeCheck size={11} color={C.apply} /> {c}
                 </span>
               ))}
             </div>
