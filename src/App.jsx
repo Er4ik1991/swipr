@@ -778,7 +778,7 @@ function RolePick({ onPick }) {
 function RegisterScreen({ role, onBack, onDone }) {
   const isSeeker = role === "seeker";
 
-  // seekers: email-only; hr: email or phone
+  // обе роли: вход через e-mail или телефон
   const [loginTab, setLoginTab] = useState("email");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -792,7 +792,7 @@ function RegisterScreen({ role, onBack, onDone }) {
 
   const validate = () => {
     const e = {};
-    if (isSeeker || loginTab === "email") {
+    if (loginTab === "email") {
       if (!email) e.login = "Введите e-mail";
       else if (!validEmail(email)) e.login = "Некорректный e-mail";
     } else {
@@ -814,7 +814,7 @@ function RegisterScreen({ role, onBack, onDone }) {
     setTimeout(() => {
       setLoading(false);
       setDone(true);
-      const login = (isSeeker || loginTab === "email") ? email : phone;
+      const login = loginTab === "email" ? email : phone;
       setTimeout(() => onDone({ login, role }), 1200);
     }, 900);
   };
@@ -862,42 +862,38 @@ function RegisterScreen({ role, onBack, onDone }) {
       </div>
 
       <h2 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: -0.4 }}>
-        {isSeeker ? "Создайте аккаунт" : "Войдите в аккаунт"}
+        Создайте аккаунт
       </h2>
       <p style={{ margin: "0 0 24px", fontSize: 13.5, color: C.muted }}>
-        {isSeeker
-          ? "Введите e-mail и придумайте пароль"
-          : "Войдите через почту или номер телефона"}
+        Войдите через почту или номер телефона
       </p>
 
-      {/* Login-method tabs — только для HR */}
-      {!isSeeker && (
-        <div style={{
-          display: "flex", gap: 0, background: C.line, borderRadius: 12, padding: 3, marginBottom: 20,
-        }}>
-          {[
-            { key: "email", label: "E-mail", Icon: Mail },
-            { key: "phone", label: "Телефон", Icon: Phone },
-          ].map(({ key, label, Icon }) => (
-            <button key={key} onClick={() => { setLoginTab(key); setErrors({}); }} style={{
-              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              padding: "9px 0", borderRadius: 10, border: "none", cursor: "pointer",
-              fontWeight: 700, fontSize: 13.5,
-              background: loginTab === key ? "#fff" : "transparent",
-              color: loginTab === key ? C.ink : C.muted,
-              boxShadow: loginTab === key ? "0 2px 8px rgba(0,0,0,.08)" : "none",
-              transition: "all .18s",
-            }}>
-              <Icon size={15} /> {label}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Login-method tabs */}
+      <div style={{
+        display: "flex", gap: 0, background: C.line, borderRadius: 12, padding: 3, marginBottom: 20,
+      }}>
+        {[
+          { key: "email", label: "E-mail", Icon: Mail },
+          { key: "phone", label: "Телефон", Icon: Phone },
+        ].map(({ key, label, Icon }) => (
+          <button key={key} onClick={() => { setLoginTab(key); setErrors({}); }} style={{
+            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            padding: "9px 0", borderRadius: 10, border: "none", cursor: "pointer",
+            fontWeight: 700, fontSize: 13.5,
+            background: loginTab === key ? "#fff" : "transparent",
+            color: loginTab === key ? C.ink : C.muted,
+            boxShadow: loginTab === key ? "0 2px 8px rgba(0,0,0,.08)" : "none",
+            transition: "all .18s",
+          }}>
+            <Icon size={15} /> {label}
+          </button>
+        ))}
+      </div>
 
       {/* Fields */}
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {/* Login field */}
-        {(isSeeker || loginTab === "email") ? (
+        {loginTab === "email" ? (
           <Field
             label="E-mail"
             error={errors.login}
