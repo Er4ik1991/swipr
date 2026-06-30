@@ -87,6 +87,16 @@ const CATEGORIES = [
 ];
 const categoryById = (id) => CATEGORIES.find((c) => c.id === id) ?? null;
 
+// доступность по времени (лёгкий профиль соискателя)
+const AVAILABILITY = [
+  { id: "weekday_day", label: "Будни днём" },
+  { id: "weekday_eve", label: "Будни вечером" },
+  { id: "weekends",    label: "Выходные" },
+  { id: "anytime",     label: "В любое время" },
+  { id: "parttime_only", label: "Только подработка" },
+];
+const availabilityLabel = (id) => AVAILABILITY.find((a) => a.id === id)?.label ?? id;
+
 // тип оплаты → крупная сумма + подпись
 function payParts(item) {
   const v = item.payValue;
@@ -655,6 +665,43 @@ function RadiusSelector({ value, onChange }) {
   );
 }
 
+// ─── CategoryChips ────────────────────────────────────────────────────────────
+function CategoryChips({ active, onToggle }) {
+  return (
+    <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+      {CATEGORIES.map((cat) => {
+        const on = active.includes(cat.id);
+        return (
+          <button key={cat.id} onClick={() => onToggle(cat.id)} style={{
+            flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
+            fontSize: 12, fontWeight: 700, padding: "5px 11px", borderRadius: 20, cursor: "pointer",
+            border: `1.5px solid ${on ? cat.color : C.line}`,
+            background: on ? `${cat.color}1a` : "rgba(255,255,255,.85)",
+            color: on ? cat.color : C.muted,
+            whiteSpace: "nowrap", transition: "all .15s",
+          }}>
+            <span>{cat.emoji}</span> {cat.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// фильтр по выбранным категориям + мягкая сортировка по интересам соискателя
+function categoryDeck(deck, activeCats, interestedCats) {
+  let out = deck;
+  if (activeCats?.length) out = out.filter((it) => activeCats.includes(it.category));
+  if (interestedCats?.length) {
+    out = [...out].sort((a, b) => {
+      const am = interestedCats.includes(a.category) ? 0 : 1;
+      const bm = interestedCats.includes(b.category) ? 0 : 1;
+      return am - bm; // совпадающие категории — выше (стабильно к гео-порядку)
+    });
+  }
+  return out;
+}
+
 const GUEST_SWIPE_LIMIT = 25;
 const guestKey = () => `swipr_guest_${new Date().toISOString().slice(0, 10)}`;
 
@@ -664,6 +711,7 @@ function GuestFeedScreen({ home, onLike, onRegister }) {
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false });
   const [exit, setExit] = useState(null);
   const [radius, setRadius] = useState("nearby");
+  const [activeCats, setActiveCats] = useState([]);
   const [guestSwipes, setGuestSwipes] = useState(() => {
     try {
       const s = JSON.parse(localStorage.getItem(guestKey()) || "{}");
@@ -672,8 +720,13 @@ function GuestFeedScreen({ home, onLike, onRegister }) {
   });
   const startRef = useRef(null);
 
+  const toggleCat = (id) => {
+    setSi(0);
+    setActiveCats((p) => p.includes(id) ? p.filter((c) => c !== id) : [...p, id]);
+  };
+
   const approved = COMPANIES.filter((c) => c.moderation === "approved");
-  const rawDeck = geoDeck(approved, home, radius);
+  const rawDeck = categoryDeck(geoDeck(approved, home, radius), activeCats, null);
   const current = rawDeck[si];
   const next = rawDeck[si + 1];
   const swipesLeft = Math.max(0, GUEST_SWIPE_LIMIT - guestSwipes);
@@ -776,6 +829,11 @@ function GuestFeedScreen({ home, onLike, onRegister }) {
         {/* Селектор радиуса */}
         <div style={{ pointerEvents: "auto", marginTop: 8 }}>
           <RadiusSelector value={radius} onChange={(v) => { setRadius(v); setSi(0); }} />
+        </div>
+
+        {/* Чипы-категории */}
+        <div style={{ pointerEvents: "auto", marginTop: 7 }}>
+          <CategoryChips active={activeCats} onToggle={toggleCat} />
         </div>
       </div>
 
@@ -905,117 +963,103 @@ function GuestFeedScreen({ home, onLike, onRegister }) {
   );
 }
 
-// ─── ProfileSetupScreen ───────────────────────────────────────────────────────
+// ─── ProfileSetupScreen (лёгкий профиль) ──────────────────────────────────────
 function ProfileSetupScreen({ user, home, onDone }) {
   const [name, setName] = useState("");
-  const [position, setPosition] = useState("");
-  const [selectedSkills, setSelectedSkills] = useState([]);
-  const [query, setQuery] = useState("");
-  const [step, setStep] = useState(1); // 1: basic info, 2: skills
+  const [age, setAge] = useState("");
+  const [experience, setExperience] = useState(null); // 'none' | 'some'
+  const [cats, setCats] = useState([]);
+  const [avail, setAvail] = useState([]);
+  const [about, setAbout] = useState("");
+  const [step, setStep] = useState(1);
   const [errors, setErrors] = useState({});
 
-  const suggestions = query.trim()
-    ? DICT_SKILLS.filter((s) =>
-        s.name.toLowerCase().includes(query.toLowerCase()) && !selectedSkills.includes(s.id)
-      )
-    : [];
-
-  const addSkill = (id) => { if (!selectedSkills.includes(id)) setSelectedSkills((p) => [...p, id]); setQuery(""); };
-  const removeSkill = (id) => setSelectedSkills((p) => p.filter((s) => s !== id));
-
-  const validateStep1 = () => {
-    const e = {};
-    if (!name.trim()) e.name = "Введите имя";
-    if (!position.trim()) e.position = "Укажите желаемую должность";
-    return e;
-  };
+  const toggle = (arr, set, id) => set(arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]);
 
   const handleNextStep = () => {
-    const e = validateStep1();
+    const e = {};
+    if (!name.trim()) e.name = "Введите имя";
+    if (!experience) e.experience = "Выберите уровень опыта";
     if (Object.keys(e).length) { setErrors(e); return; }
     setErrors({});
     setStep(2);
   };
 
   const handleDone = () => {
-    onDone({ name, position, district: home?.district ?? null, geo: home, skills: selectedSkills });
+    onDone({
+      name, age: age ? Number(age) : null,
+      district: home?.district ?? null, geo: home,
+      experienceLevel: experience,
+      interestedCategories: cats,
+      availability: avail,
+      about,
+    });
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", padding: "32px 24px 30px", minHeight: "100%" }}>
-      {/* Заголовок */}
-      <div style={{ marginBottom: 24 }}>
+      {/* Заголовок + прогресс */}
+      <div style={{ marginBottom: 22 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 11, background: `${C.brand}14`,
-            display: "grid", placeItems: "center",
-          }}>
+          <div style={{ width: 36, height: 36, borderRadius: 11, background: `${C.brand}14`, display: "grid", placeItems: "center" }}>
             <User size={18} color={C.brand} />
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: C.brand }}>Шаг {step} из 2</div>
             <div style={{ height: 4, background: C.line, borderRadius: 2, marginTop: 4 }}>
-              <div style={{
-                height: "100%", borderRadius: 2, background: C.brand,
-                width: step === 1 ? "50%" : "100%", transition: "width .3s",
-              }} />
+              <div style={{ height: "100%", borderRadius: 2, background: C.brand, width: step === 1 ? "50%" : "100%", transition: "width .3s" }} />
             </div>
           </div>
         </div>
         <h2 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: -0.4 }}>
-          {step === 1 ? "Расскажите о себе" : "Ваши навыки"}
+          {step === 1 ? "Коротко о себе" : "Что и когда ищете"}
         </h2>
         <p style={{ margin: 0, fontSize: 13.5, color: C.muted }}>
-          {step === 1
-            ? "Это поможет работодателям найти вас"
-            : "Вакансии с совпадающими навыками будут выше в ленте"}
+          {step === 1 ? "Без длинных анкет — пара строк" : "Подберём вакансии рядом под вас"}
         </p>
       </div>
 
       {step === 1 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Field
-            label="Имя"
-            error={errors.name}
-            input={
-              <input
-                placeholder="Как вас зовут?"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                style={inputStyle(!!errors.name)}
-              />
-            }
+          <Field label="Имя" error={errors.name}
+            input={<input placeholder="Как вас зовут?" value={name} onChange={(e) => setName(e.target.value)} style={inputStyle(!!errors.name)} />}
           />
-          <Field
-            label="Желаемая должность"
-            error={errors.position}
-            input={
-              <input
-                placeholder="Например: Мастер маникюра"
-                value={position}
-                onChange={(e) => setPosition(e.target.value)}
-                style={inputStyle(!!errors.position)}
-              />
-            }
+          <Field label="Возраст (необязательно)"
+            input={<input type="number" placeholder="Например: 22" value={age} onChange={(e) => setAge(e.target.value)} style={inputStyle(false)} />}
           />
 
-          {/* Район (из геолокации) */}
+          {/* Опыт */}
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 8 }}>
+              Опыт работы
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[{ id: "none", label: "Без опыта" }, { id: "some", label: "Есть опыт" }].map((o) => {
+                const on = experience === o.id;
+                return (
+                  <button key={o.id} onClick={() => setExperience(o.id)} style={{
+                    flex: 1, padding: "11px 0", borderRadius: 12, cursor: "pointer",
+                    border: `1.5px solid ${on ? C.brand : C.line}`,
+                    background: on ? `${C.brand}14` : "#fff", color: on ? C.brand : C.muted,
+                    fontSize: 14, fontWeight: 700, transition: "all .15s",
+                  }}>
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+            {errors.experience && <p style={{ margin: "6px 0 0", fontSize: 12, color: C.err, fontWeight: 600 }}>{errors.experience}</p>}
+          </div>
+
+          {/* Район из геолокации */}
           <div>
             <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 8 }}>
               Ваш район
             </label>
-            <div style={{
-              display: "flex", alignItems: "center", gap: 8,
-              padding: "11px 14px", borderRadius: 12,
-              border: `1.5px solid ${C.line}`, background: `${C.brand}08`,
-            }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", borderRadius: 12, border: `1.5px solid ${C.line}`, background: `${C.brand}08` }}>
               <MapPin size={16} color={C.brand} />
-              <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>
-                {home?.district ?? "Не указан"}
-              </span>
-              <span style={{ marginLeft: "auto", fontSize: 11.5, color: C.muted }}>
-                из геолокации
-              </span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{home?.district ?? "Не указан"}</span>
+              <span style={{ marginLeft: "auto", fontSize: 11.5, color: C.muted }}>из геолокации</span>
             </div>
           </div>
 
@@ -1029,83 +1073,65 @@ function ProfileSetupScreen({ user, home, onDone }) {
       )}
 
       {step === 2 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {/* Выбранные навыки */}
-          {selectedSkills.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {selectedSkills.map((id) => (
-                <span key={id} style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  fontSize: 13, fontWeight: 700, color: C.brand,
-                  background: `${C.brand}14`, border: `1.5px solid ${C.brand}30`,
-                  padding: "5px 10px 5px 12px", borderRadius: 20,
-                }}>
-                  {skillName(id)}
-                  <button onClick={() => removeSkill(id)} style={{
-                    background: "none", border: "none", cursor: "pointer",
-                    color: C.brand, display: "grid", placeItems: "center", padding: 0,
-                  }}>
-                    <X size={13} strokeWidth={2.5} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Autocomplete */}
-          <div style={{ position: "relative" }}>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Начните вводить навык…"
-              style={{ ...inputStyle(false), padding: "10px 14px" }}
-            />
-            {suggestions.length > 0 && (
-              <div style={{
-                position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
-                background: "#fff", borderRadius: 12, border: `1.5px solid ${C.line}`,
-                boxShadow: "0 8px 24px rgba(0,0,0,.10)", zIndex: 20, overflow: "hidden",
-              }}>
-                {suggestions.map((s) => (
-                  <button key={s.id} onClick={() => addSkill(s.id)} style={{
-                    width: "100%", display: "block", padding: "10px 14px",
-                    background: "none", border: "none", cursor: "pointer",
-                    textAlign: "left", fontSize: 14, fontWeight: 600, color: C.ink,
-                  }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = "#F5F3EF"}
-                    onMouseLeave={(e) => e.currentTarget.style.background = "none"}
-                  >
-                    {s.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Все навыки */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          {/* Категории интересов */}
           <div>
-            <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.6 }}>
-              Выберите из списка
-            </p>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 8 }}>
+              Что ищете
+            </label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {DICT_SKILLS.map((s) => {
-                const selected = selectedSkills.includes(s.id);
+              {CATEGORIES.map((cat) => {
+                const on = cats.includes(cat.id);
                 return (
-                  <button key={s.id} onClick={() => selected ? removeSkill(s.id) : addSkill(s.id)} style={{
-                    fontSize: 13, fontWeight: 600, padding: "6px 13px", borderRadius: 20, cursor: "pointer",
-                    border: `1.5px solid ${selected ? C.brand : C.line}`,
-                    background: selected ? `${C.brand}14` : "#fff",
-                    color: selected ? C.brand : C.muted,
+                  <button key={cat.id} onClick={() => toggle(cats, setCats, cat.id)} style={{
+                    display: "flex", alignItems: "center", gap: 5,
+                    fontSize: 13, fontWeight: 600, padding: "7px 13px", borderRadius: 20, cursor: "pointer",
+                    border: `1.5px solid ${on ? cat.color : C.line}`,
+                    background: on ? `${cat.color}14` : "#fff", color: on ? cat.color : C.muted,
                     transition: "all .15s",
                   }}>
-                    {s.name}
+                    {cat.emoji} {cat.label}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+          {/* Доступность */}
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 8 }}>
+              Когда удобно работать
+            </label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {AVAILABILITY.map((a) => {
+                const on = avail.includes(a.id);
+                return (
+                  <button key={a.id} onClick={() => toggle(avail, setAvail, a.id)} style={{
+                    fontSize: 13, fontWeight: 600, padding: "7px 13px", borderRadius: 20, cursor: "pointer",
+                    border: `1.5px solid ${on ? C.brand : C.line}`,
+                    background: on ? `${C.brand}14` : "#fff", color: on ? C.brand : C.muted,
+                    transition: "all .15s",
+                  }}>
+                    {a.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* О себе */}
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 8 }}>
+              О себе (1–2 строки, необязательно)
+            </label>
+            <textarea
+              rows={2} value={about} onChange={(e) => setAbout(e.target.value)}
+              placeholder="Например: ответственная, быстро учусь, ищу подработку рядом с домом"
+              style={{ ...inputStyle(false), resize: "none", fontFamily: "inherit", lineHeight: 1.4 }}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             <button onClick={() => setStep(1)} style={{
               padding: "13px 0", borderRadius: 14, border: `1.5px solid ${C.line}`,
               background: "#fff", color: C.muted, fontSize: 14, fontWeight: 700, cursor: "pointer",
@@ -1117,7 +1143,7 @@ function ProfileSetupScreen({ user, home, onDone }) {
               flex: 1, padding: "13px 0", borderRadius: 14, border: "none",
               background: C.brand, color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer",
             }}>
-              {selectedSkills.length > 0 ? "Готово — в ленту!" : "Пропустить и войти"}
+              {cats.length > 0 ? "Готово — в ленту!" : "Пропустить и войти"}
             </button>
           </div>
         </div>
@@ -1504,6 +1530,8 @@ function MainApp({ role, user, home, onLogout, isDark, onToggleTheme, initialLik
   const [matchModal, setMatchModal] = useState(null);
   const [activeChat, setActiveChat] = useState(null);
   const [userSkills, setUserSkills] = useState(user?.skills ?? []);
+  const [userCats, setUserCats] = useState(user?.interestedCategories ?? []);
+  const [userAvail, setUserAvail] = useState(user?.availability ?? []);
 
   // process a like that happened before registration
   useEffect(() => {
@@ -1592,7 +1620,7 @@ function MainApp({ role, user, home, onLogout, isDark, onToggleTheme, initialLik
       {/* Контент активной вкладки */}
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
         {tab === "feed" && (
-          <FeedTab mode={mode} user={user} home={home} onLogout={onLogout} onLike={handleLike} userSkills={userSkills} />
+          <FeedTab mode={mode} user={user} home={home} onLogout={onLogout} onLike={handleLike} userSkills={userSkills} userCats={userCats} />
         )}
         {tab === "chats" && !activeChatNeg && (
           <ChatsPlaceholder negotiations={negotiations} onOpenChat={openChat} />
@@ -1617,6 +1645,8 @@ function MainApp({ role, user, home, onLogout, isDark, onToggleTheme, initialLik
           <ProfileScreen
             user={user} role={role}
             userSkills={userSkills} onSkillsChange={setUserSkills}
+            userCats={userCats} onCatsChange={setUserCats}
+            userAvail={userAvail} onAvailChange={setUserAvail}
             isDark={isDark} onToggleTheme={onToggleTheme}
           />
         )}
@@ -1876,7 +1906,7 @@ function applyFilters(deck, filters, mode) {
 }
 
 // ─── Feed tab (свайп-лента) ───────────────────────────────────────────────────
-function FeedTab({ mode, user, home, onLogout, onLike, userSkills }) {
+function FeedTab({ mode, user, home, onLogout, onLike, userSkills, userCats }) {
   const [si, setSi] = useState(0);
   const [hi, setHi] = useState(0);
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false });
@@ -1884,7 +1914,13 @@ function FeedTab({ mode, user, home, onLogout, onLike, userSkills }) {
   const [toast, setToast] = useState(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [radius, setRadius] = useState("nearby");
+  const [activeCats, setActiveCats] = useState([]);
   const [filters, setFilters] = useState({ city: null, salaryMin: null, expMin: null });
+
+  const toggleCat = (id) => {
+    setSi(0);
+    setActiveCats((p) => p.includes(id) ? p.filter((c) => c !== id) : [...p, id]);
+  };
   const [swipesUsed, setSwipesUsed] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("swipr_swipes") || "{}");
@@ -1903,7 +1939,7 @@ function FeedTab({ mode, user, home, onLogout, onLike, userSkills }) {
   const rawDeck = mode === "seeker" ? COMPANIES : CANDIDATES;
   const filteredDeck = applyFilters(rawDeck, filters, mode);
   const deck = useGeo
-    ? geoDeck(filteredDeck, home, radius)
+    ? categoryDeck(geoDeck(filteredDeck, home, radius), activeCats, userCats)
     : sortedDeck(filteredDeck, userSkills);
   const idx = mode === "seeker" ? si : hi;
   const setIdx = mode === "seeker" ? setSi : setHi;
@@ -2022,6 +2058,9 @@ function FeedTab({ mode, user, home, onLogout, onLike, userSkills }) {
             </div>
             <div style={{ pointerEvents: "auto", marginTop: 8 }}>
               <RadiusSelector value={radius} onChange={(v) => { setRadius(v); setIdx(0); }} />
+            </div>
+            <div style={{ pointerEvents: "auto", marginTop: 7 }}>
+              <CategoryChips active={activeCats} onToggle={toggleCat} />
             </div>
           </>
         )}
@@ -2980,7 +3019,7 @@ function ModerationBadge({ status }) {
 }
 
 // ─── Profile screen ───────────────────────────────────────────────────────────
-function ProfileScreen({ user, role, userSkills, onSkillsChange, isDark, onToggleTheme }) {
+function ProfileScreen({ user, role, userSkills, onSkillsChange, userCats, onCatsChange, userAvail, onAvailChange, isDark, onToggleTheme }) {
   const isSeeker = role === "seeker";
   const roleColor = isSeeker ? C.brand : C.apply;
   const [query, setQuery] = useState("");
@@ -3118,106 +3157,125 @@ function ProfileScreen({ user, role, userSkills, onSkillsChange, isDark, onToggl
           </div>
         )}
 
-        {/* Блок навыков */}
-        <div>
-          <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 800, color: C.ink }}>
-            {isSeeker ? "Мои навыки" : "Ищу навыки"}
-          </h3>
-          <p style={{ margin: "0 0 12px", fontSize: 12.5, color: C.muted }}>
-            {isSeeker
-              ? "Вакансии с совпадающими навыками будут выше в ленте"
-              : "Кандидаты с совпадающими навыками будут выше в ленте"}
-          </p>
-
-          {/* Выбранные навыки */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-            {userSkills.length === 0 && (
-              <span style={{ fontSize: 13, color: C.muted }}>Навыки не выбраны</span>
-            )}
-            {userSkills.map((id) => (
-              <span key={id} style={{
-                display: "flex", alignItems: "center", gap: 6,
-                fontSize: 13, fontWeight: 700, color: roleColor,
-                background: `${roleColor}14`, border: `1.5px solid ${roleColor}30`,
-                padding: "5px 10px 5px 12px", borderRadius: 20,
-              }}>
-                {skillName(id)}
-                <button onClick={() => removeSkill(id)} style={{
-                  background: "none", border: "none", cursor: "pointer",
-                  color: roleColor, display: "grid", placeItems: "center", padding: 0,
+        {/* ── Соискатель: лёгкий профиль (категории + доступность + район) ── */}
+        {isSeeker && (
+          <>
+            {/* Уровень опыта */}
+            {user?.experienceLevel && (
+              <div>
+                <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 800, color: C.ink }}>Опыт</h3>
+                <span style={{
+                  fontSize: 13, fontWeight: 700, color: roleColor,
+                  background: `${roleColor}14`, padding: "6px 14px", borderRadius: 20,
                 }}>
-                  <X size={13} strokeWidth={2.5} />
-                </button>
-              </span>
-            ))}
-          </div>
-
-          {/* Autocomplete */}
-          <div style={{ position: "relative" }}>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Начните вводить навык…"
-              style={{ ...inputStyle(false), padding: "10px 14px" }}
-            />
-            {suggestions.length > 0 && (
-              <div style={{
-                position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
-                background: "#fff", borderRadius: 12, border: `1.5px solid ${C.line}`,
-                boxShadow: "0 8px 24px rgba(0,0,0,.10)", zIndex: 20, overflow: "hidden",
-              }}>
-                {suggestions.map((s) => (
-                  <button key={s.id} onClick={() => addSkill(s.id)} style={{
-                    width: "100%", display: "block", padding: "10px 14px",
-                    background: "none", border: "none", cursor: "pointer",
-                    textAlign: "left", fontSize: 14, fontWeight: 600, color: C.ink,
-                  }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = "#F5F3EF"}
-                    onMouseLeave={(e) => e.currentTarget.style.background = "none"}
-                  >
-                    {s.name}
-                  </button>
-                ))}
+                  {user.experienceLevel === "none" ? "Без опыта" : "Есть опыт"}
+                </span>
               </div>
             )}
-          </div>
 
-          {/* Все навыки из справочника */}
-          <p style={{ margin: "14px 0 8px", fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.6 }}>
-            Все навыки
-          </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {DICT_SKILLS.map((s) => {
-              const selected = userSkills.includes(s.id);
-              return (
-                <button key={s.id} onClick={() => selected ? removeSkill(s.id) : addSkill(s.id)} style={{
-                  fontSize: 13, fontWeight: 600, padding: "6px 13px", borderRadius: 20, cursor: "pointer",
-                  border: `1.5px solid ${selected ? roleColor : C.line}`,
-                  background: selected ? `${roleColor}14` : "#fff",
-                  color: selected ? roleColor : C.muted,
-                  transition: "all .15s",
+            {/* Интересные категории */}
+            <div>
+              <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 800, color: C.ink }}>Что ищу</h3>
+              <p style={{ margin: "0 0 12px", fontSize: 12.5, color: C.muted }}>
+                Вакансии этих категорий будут выше в ленте
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {CATEGORIES.map((cat) => {
+                  const on = userCats.includes(cat.id);
+                  return (
+                    <button key={cat.id} onClick={() => onCatsChange(on ? userCats.filter((c) => c !== cat.id) : [...userCats, cat.id])} style={{
+                      display: "flex", alignItems: "center", gap: 5,
+                      fontSize: 13, fontWeight: 600, padding: "7px 13px", borderRadius: 20, cursor: "pointer",
+                      border: `1.5px solid ${on ? cat.color : C.line}`,
+                      background: on ? `${cat.color}14` : "#fff", color: on ? cat.color : C.muted,
+                      transition: "all .15s",
+                    }}>
+                      {cat.emoji} {cat.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Доступность */}
+            <div>
+              <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 800, color: C.ink }}>Когда удобно работать</h3>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {AVAILABILITY.map((a) => {
+                  const on = userAvail.includes(a.id);
+                  return (
+                    <button key={a.id} onClick={() => onAvailChange(on ? userAvail.filter((x) => x !== a.id) : [...userAvail, a.id])} style={{
+                      fontSize: 13, fontWeight: 600, padding: "7px 13px", borderRadius: 20, cursor: "pointer",
+                      border: `1.5px solid ${on ? roleColor : C.line}`,
+                      background: on ? `${roleColor}14` : "#fff", color: on ? roleColor : C.muted,
+                      transition: "all .15s",
+                    }}>
+                      {a.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Район */}
+            <div>
+              <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 800, color: C.ink }}>Район</h3>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", borderRadius: 12, border: `1.5px solid ${C.line}`, background: C.card }}>
+                <MapPin size={16} color={roleColor} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>
+                  {user?.district ?? "Не указан"}
+                </span>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── Наниматель: навыки, которые ищет ── */}
+        {!isSeeker && (
+          <div>
+            <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 800, color: C.ink }}>Ищу навыки</h3>
+            <p style={{ margin: "0 0 12px", fontSize: 12.5, color: C.muted }}>
+              Кандидаты с совпадающими навыками будут выше в ленте
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              {userSkills.length === 0 && (
+                <span style={{ fontSize: 13, color: C.muted }}>Навыки не выбраны</span>
+              )}
+              {userSkills.map((id) => (
+                <span key={id} style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  fontSize: 13, fontWeight: 700, color: roleColor,
+                  background: `${roleColor}14`, border: `1.5px solid ${roleColor}30`,
+                  padding: "5px 10px 5px 12px", borderRadius: 20,
                 }}>
-                  {s.name}
-                </button>
-              );
-            })}
+                  {skillName(id)}
+                  <button onClick={() => removeSkill(id)} style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    color: roleColor, display: "grid", placeItems: "center", padding: 0,
+                  }}>
+                    <X size={13} strokeWidth={2.5} />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {DICT_SKILLS.map((s) => {
+                const selected = userSkills.includes(s.id);
+                return (
+                  <button key={s.id} onClick={() => selected ? removeSkill(s.id) : addSkill(s.id)} style={{
+                    fontSize: 13, fontWeight: 600, padding: "6px 13px", borderRadius: 20, cursor: "pointer",
+                    border: `1.5px solid ${selected ? roleColor : C.line}`,
+                    background: selected ? `${roleColor}14` : "#fff",
+                    color: selected ? roleColor : C.muted,
+                    transition: "all .15s",
+                  }}>
+                    {s.name}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-
-        {/* Город */}
-        <div>
-          <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 800, color: C.ink }}>Город</h3>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {DICT_AREAS.map((a) => (
-              <span key={a.id} style={{
-                fontSize: 13, fontWeight: 600, padding: "6px 14px", borderRadius: 20,
-                border: `1.5px solid ${C.line}`, background: C.card, color: C.muted,
-              }}>
-                {a.name}
-              </span>
-            ))}
-          </div>
-        </div>
+        )}
 
         {/* Оформление */}
         <div>
