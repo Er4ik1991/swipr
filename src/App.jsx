@@ -75,49 +75,195 @@ const DICT_AREAS = [
 
 const skillName = (id) => DICT_SKILLS.find((s) => s.id === id)?.name ?? id;
 
+// ─── Гео: районы с координатами (моки) ────────────────────────────────────────
+const DISTRICTS = [
+  { id: "sokol",        name: "Сокол",            lat: 55.8050, lng: 37.5150 },
+  { id: "aeroport",     name: "Аэропорт",         lat: 55.8000, lng: 37.5330 },
+  { id: "voykovskaya",  name: "Войковская",       lat: 55.8190, lng: 37.4980 },
+  { id: "begovaya",     name: "Беговая",          lat: 55.7730, lng: 37.5560 },
+  { id: "presnensky",   name: "Пресня · Сити",    lat: 55.7490, lng: 37.5400 },
+  { id: "khamovniki",   name: "Хамовники",        lat: 55.7310, lng: 37.5850 },
+  { id: "tverskoy",     name: "Тверской",         lat: 55.7660, lng: 37.6050 },
+  { id: "sokolniki",    name: "Сокольники",       lat: 55.7890, lng: 37.6740 },
+];
+
+const districtName = (id) => DISTRICTS.find((d) => d.id === id)?.name ?? id;
+const districtById  = (id) => DISTRICTS.find((d) => d.id === id) ?? null;
+
+// расстояние по гаверсинусу, км
+function distanceKm(a, b) {
+  if (!a || !b || a.lat == null || b.lat == null) return null;
+  const R = 6371;
+  const toRad = (x) => (x * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+const walkMin = (km) => Math.max(1, Math.round((km / 5) * 60)); // ~5 км/ч
+const fmtKm = (km) =>
+  km == null ? "" : km < 1 ? `${Math.round(km * 1000)} м` : `${km.toFixed(1).replace(".", ",")} км`;
+
+// ближайший район к произвольным координатам (для подписи дома по геолокации)
+function nearestDistrict(coords) {
+  let best = DISTRICTS[0], bestD = Infinity;
+  for (const d of DISTRICTS) {
+    const dist = distanceKm(coords, d);
+    if (dist != null && dist < bestD) { bestD = dist; best = d; }
+  }
+  return best;
+}
+
+// варианты радиуса в шапке ленты
+const RADIUS_OPTIONS = [
+  { key: "nearby", label: "Рядом",      sub: "~2 км",  km: 2 },
+  { key: "min15",  label: "15 мин",     sub: "пешком", km: 1.25 },
+  { key: "min30",  label: "30 мин",     sub: "пешком", km: 2.5 },
+  { key: "city",   label: "Весь город", sub: "",       km: Infinity },
+];
+const radiusKm = (key) => RADIUS_OPTIONS.find((r) => r.key === key)?.km ?? Infinity;
+
 // ─── mock data ───────────────────────────────────────────────────────────────
-const COMPANIES = [
+// геопозиция вакансии берётся по району (districtById); поле geo добавляется в withGeo()
+const COMPANIES_RAW = [
   {
-    company: "Лак&Шик", logo: "ЛШ", logoBg: "#E879A8",
-    role: "Мастер маникюра", city: "Москва · Хамовники", areaId: "moscow",
-    salary: "80 000 – 120 000 ₽", salaryFrom: 80000, icon: Sparkles,
-    photoLabel: "Рабочее место мастера", photo: ["#F7C5DE", "#E879A8"],
-    blurb: "Уютный салон, своё кресло и витрина гель-лаков. График 2/2, чай и печеньки за счёт салона.",
-    tags: ["Своё кресло", "График 2/2", "Премии за отзывы"],
-    skills: ["manicure", "gel", "nail_design"],
+    company: "Пункт выдачи Ozon", logo: "OZ", logoBg: "#0F4FFF",
+    role: "Оператор ПВЗ", districtId: "sokol", areaId: "moscow",
+    salary: "от 180 ₽/час", salaryFrom: 35000, icon: Building2,
+    photoLabel: "Зал выдачи", photo: ["#BFD0FF", "#3B5BDB"],
+    blurb: "Выдаём заказы рядом с метро. Сменный график 2/2, можно совмещать с учёбой. Научим всему на месте.",
+    tags: ["Без опыта", "2/2", "Рядом с метро"],
+    skills: [], noExperienceOk: true,
     moderation: "approved", verified: true,
   },
   {
-    company: "Кофейня «Пар»", logo: "ПР", logoBg: "#C08457",
-    role: "Бариста", city: "Санкт-Петербург · Центр", areaId: "spb",
-    salary: "60 000 – 90 000 ₽", salaryFrom: 60000, icon: Coffee,
+    company: "Кофейня «Тёплый угол»", logo: "ТУ", logoBg: "#C08457",
+    role: "Бариста", districtId: "aeroport", areaId: "moscow",
+    salary: "от 220 ₽/час", salaryFrom: 42000, icon: Coffee,
     photoLabel: "Барная стойка", photo: ["#E7CBA9", "#9B6B43"],
-    blurb: "Specialty-кофейня у канала. Обучим латте-арту, кофе для бариста — бесплатно и без лимита.",
-    tags: ["Чаевые", "Гибкий график", "Обучение"],
-    skills: ["barista", "latte_art", "specialty"],
+    blurb: "Маленькая кофейня у дома. Обучим латте-арту, кофе бариста — бесплатно. Чаевые ваши.",
+    tags: ["Можно без опыта", "Чаевые", "Гибкий график"],
+    skills: ["barista", "latte_art"], noExperienceOk: true,
+    moderation: "approved", verified: true,
+  },
+  {
+    company: "Салон «Лак&Шик»", logo: "ЛШ", logoBg: "#E879A8",
+    role: "Мастер маникюра", districtId: "voykovskaya", areaId: "moscow",
+    salary: "50% с услуги", salaryFrom: 80000, icon: Sparkles,
+    photoLabel: "Рабочее место мастера", photo: ["#F7C5DE", "#E879A8"],
+    blurb: "Уютный салон, своё кресло и витрина гель-лаков. График 2/2, аренда кресла или процент.",
+    tags: ["Своё кресло", "2/2", "Премии за отзывы"],
+    skills: ["manicure", "gel", "nail_design"], noExperienceOk: false,
+    moderation: "approved", verified: true,
+  },
+  {
+    company: "Склад «БыстроЛогистик»", logo: "БЛ", logoBg: "#3FB28B",
+    role: "Комплектовщик", districtId: "voykovskaya", areaId: "moscow",
+    salary: "от 200 ₽/час", salaryFrom: 45000, icon: Building2,
+    photoLabel: "Складская зона", photo: ["#BCE3D4", "#2E8C6A"],
+    blurb: "Собираем заказы на тёплом складе. Можно выйти уже завтра, оплата еженедельно.",
+    tags: ["Без опыта", "Срочно", "Оплата раз в неделю"],
+    skills: [], noExperienceOk: true,
+    moderation: "approved", verified: true,
+  },
+  {
+    company: "Пекарня «Корка»", logo: "К", logoBg: "#D98E3A",
+    role: "Продавец-кассир", districtId: "sokol", areaId: "moscow",
+    salary: "от 190 ₽/час", salaryFrom: 38000, icon: Coffee,
+    photoLabel: "Витрина пекарни", photo: ["#F1D9B5", "#C2873E"],
+    blurb: "Продаём свежий хлеб и выпечку. Утренние или вечерние смены — выбирайте сами.",
+    tags: ["Без опыта", "Вечерние смены", "Скидки сотрудникам"],
+    skills: [], noExperienceOk: true,
+    moderation: "approved", verified: false,
+  },
+  {
+    company: "Студия «Растишка»", logo: "Р", logoBg: "#7C6FF0",
+    role: "Педагог-вожатый", districtId: "begovaya", areaId: "moscow",
+    salary: "от 600 ₽/занятие", salaryFrom: 40000, icon: GraduationCap,
+    photoLabel: "Игровая комната", photo: ["#D6CFFA", "#6C5CE7"],
+    blurb: "Детский клуб ищет вожатого на выходные. Любите детей — научим программе.",
+    tags: ["Выходные", "Можно без опыта", "Подработка"],
+    skills: [], noExperienceOk: true,
+    moderation: "approved", verified: true,
+  },
+  {
+    company: "Автосервис «Гараж 24»", logo: "Г24", logoBg: "#5B8DEF",
+    role: "Автомойщик", districtId: "begovaya", areaId: "moscow",
+    salary: "от 210 ₽/час", salaryFrom: 46000, icon: Wrench,
+    photoLabel: "Моечный пост", photo: ["#BFD4F2", "#3F6FCB"],
+    blurb: "Моем авто рядом с ТТК. Сдельная оплата + процент, можно без опыта.",
+    tags: ["Без опыта", "Сдельно", "Парковка"],
+    skills: [], noExperienceOk: true,
+    moderation: "approved", verified: false,
+  },
+  {
+    company: "Магазин «У дома»", logo: "УД", logoBg: "#16A06A",
+    role: "Продавец-консультант", districtId: "presnensky", areaId: "moscow",
+    salary: "от 195 ₽/час", salaryFrom: 41000, icon: Building2,
+    photoLabel: "Торговый зал", photo: ["#BCEBD6", "#159E68"],
+    blurb: "Продукты у дома. Смены по 8 часов, дружный коллектив, обеды за счёт магазина.",
+    tags: ["Без опыта", "5/2", "Обеды"],
+    skills: [], noExperienceOk: true,
     moderation: "pending", verified: false,
   },
   {
-    company: "IT-студия «Контур»", logo: "К", logoBg: "#5B8DEF",
-    role: "Офис-менеджер", city: "Москва · Сити", areaId: "moscow",
-    salary: "70 000 – 95 000 ₽", salaryFrom: 70000, icon: Building2,
-    photoLabel: "Наш офис", photo: ["#BFD4F2", "#5B8DEF"],
-    blurb: "Светлый open-space на 23 этаже, кухня с панорамой, ДМС с первого дня.",
-    tags: ["ДМС", "5/2", "Удалёнка по пятницам"],
-    skills: ["office_mgmt", "doc_flow", "english_b2", "1c"],
+    company: "Клининг «Чисто и Точка»", logo: "ЧТ", logoBg: "#22B8CF",
+    role: "Уборщик-курьер", districtId: "tverskoy", areaId: "moscow",
+    salary: "от 230 ₽/час", salaryFrom: 44000, icon: Wrench,
+    photoLabel: "Объект уборки", photo: ["#C2ECF2", "#1098AD"],
+    blurb: "Уборка офисов в центре. Разовые выходы и постоянные смены, оплата в день выхода.",
+    tags: ["Разовая", "Срочно", "Оплата в день"],
+    skills: [], noExperienceOk: true,
     moderation: "approved", verified: true,
   },
   {
+    company: "Бар «На углу»", logo: "НУ", logoBg: "#9B59B6",
+    role: "Официант", districtId: "khamovniki", areaId: "moscow",
+    salary: "от 200 ₽/час + чай", salaryFrom: 43000, icon: Coffee,
+    photoLabel: "Зал бара", photo: ["#E0CCEF", "#8E44AD"],
+    blurb: "Вечерние смены в баре. Чаевые делим поровну, кормим перед сменой.",
+    tags: ["Вечерние смены", "Чаевые", "Можно без опыта"],
+    skills: [], noExperienceOk: true,
+    moderation: "approved", verified: false,
+  },
+  // дальние — для демонстрации фильтра по радиусу
+  {
+    company: "Кофейня «Пар»", logo: "ПР", logoBg: "#C08457",
+    role: "Бариста", districtId: null, areaId: "spb",
+    geo: { lat: 59.9343, lng: 30.3351, district: "Центр" },
+    salary: "от 210 ₽/час", salaryFrom: 60000, icon: Coffee,
+    photoLabel: "Барная стойка", photo: ["#E7CBA9", "#9B6B43"],
+    blurb: "Specialty-кофейня у канала в Санкт-Петербурге.",
+    tags: ["Чаевые", "Обучение"],
+    skills: ["barista", "latte_art", "specialty"], noExperienceOk: true,
+    moderation: "approved", verified: false,
+  },
+  {
     company: "Автосервис «Гараж 24»", logo: "Г24", logoBg: "#3FB28B",
-    role: "Автомеханик", city: "Казань", areaId: "kazan",
-    salary: "90 000 – 140 000 ₽", salaryFrom: 90000, icon: Wrench,
+    role: "Автомеханик", districtId: null, areaId: "kazan",
+    geo: { lat: 55.7963, lng: 49.1088, district: "Казань" },
+    salary: "от 280 ₽/час", salaryFrom: 90000, icon: Wrench,
     photoLabel: "Рабочий бокс", photo: ["#BCE3D4", "#2E8C6A"],
-    blurb: "4 поста, современный инструмент и подъёмники. Сдельная оплата + оклад.",
-    tags: ["Сдельно+оклад", "Новый инструмент", "Парковка"],
-    skills: ["mechanic", "diagnostics"],
-    moderation: "rejected", verified: false,
+    blurb: "4 поста, современный инструмент. Казань.",
+    tags: ["Сдельно+оклад", "Парковка"],
+    skills: ["mechanic", "diagnostics"], noExperienceOk: false,
+    moderation: "approved", verified: false,
   },
 ];
+
+// проставляем geo по району (если не задан явно)
+const withGeo = (item) => {
+  if (item.geo) return { ...item, city: `${item.geo.district}`, district: item.geo.district };
+  const d = districtById(item.districtId);
+  return d
+    ? { ...item, geo: { lat: d.lat, lng: d.lng, district: d.name }, city: `Москва · ${d.name}`, district: d.name }
+    : item;
+};
+
+const COMPANIES = COMPANIES_RAW.map(withGeo);
 
 const CANDIDATES = [
   {
@@ -156,13 +302,30 @@ function sortedDeck(deck, userSkills) {
   });
 }
 
+// гео-колода: считает расстояние от дома, фильтрует по радиусу, сортирует по близости
+function geoDeck(list, home, radiusKey) {
+  const r = radiusKm(radiusKey);
+  return list
+    .map((it) => ({ ...it, _dist: distanceKm(home, it.geo) }))
+    .filter((it) => {
+      if (!home) return true;             // нет дома — не фильтруем
+      if (it._dist == null) return r === Infinity; // вакансия без гео — только в «Весь город»
+      return it._dist <= r;
+    })
+    .sort((a, b) => {
+      if (a._dist == null) return 1;
+      if (b._dist == null) return -1;
+      return a._dist - b._dist;
+    });
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const validEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const validPhone = (v) => /^\+?[\d\s\-()]{7,15}$/.test(v);
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  // screens: "pick" | "guestFeed" | "register" | "profileSetup" | "app"
+  // screens: "pick" | "geo" | "guestFeed" | "register" | "profileSetup" | "app"
   const [screen, setScreen] = useState("pick");
   const [role, setRole] = useState(null);
   const [user, setUser] = useState(null);
@@ -170,6 +333,8 @@ export default function App() {
   const [, forceUpdate] = useState(0);
   // item that triggered registration gate (so we can process the like after sign-up)
   const [pendingLike, setPendingLike] = useState(null);
+  // дом соискателя: { lat, lng, district }
+  const [home, setHome] = useState(null);
 
   const toggleTheme = () => {
     const next = !isDark;
@@ -181,11 +346,13 @@ export default function App() {
   const handleRolePick = (r) => {
     setRole(r);
     if (r === "seeker") {
-      setScreen("guestFeed"); // seeker browses without registration
+      setScreen("geo"); // сначала спрашиваем геолокацию, потом гостевая лента
     } else {
       setScreen("register"); // hr must register first
     }
   };
+
+  const handleGeoDone = (h) => { setHome(h); setScreen("guestFeed"); };
 
   // called when guest seeker likes or clicks "respond"
   const handleGuestLike = (item) => {
@@ -208,7 +375,9 @@ export default function App() {
   };
 
   const handleBack = () => setScreen("pick");
-  const handleLogout = () => { setUser(null); setRole(null); setPendingLike(null); setScreen("pick"); };
+  const handleLogout = () => {
+    setUser(null); setRole(null); setPendingLike(null); setHome(null); setScreen("pick");
+  };
 
   return (
     <div style={{
@@ -227,9 +396,14 @@ export default function App() {
         {screen === "pick" && (
           <div style={{ flex: 1, overflow: "hidden" }}><RolePick onPick={handleRolePick} /></div>
         )}
+        {screen === "geo" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <GeoOnboardingScreen onBack={handleBack} onDone={handleGeoDone} />
+          </div>
+        )}
         {screen === "guestFeed" && (
           <div style={{ flex: 1, overflow: "hidden" }}>
-            <GuestFeedScreen onLike={handleGuestLike} onRegister={() => setScreen("register")} />
+            <GuestFeedScreen home={home} onLike={handleGuestLike} onRegister={() => setScreen("register")} />
           </div>
         )}
         {screen === "register" && (
@@ -243,12 +417,12 @@ export default function App() {
         )}
         {screen === "profileSetup" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <ProfileSetupScreen user={user} onDone={handleProfileDone} />
+            <ProfileSetupScreen user={user} home={home} onDone={handleProfileDone} />
           </div>
         )}
         {screen === "app" && (
           <MainApp
-            role={role} user={user}
+            role={role} user={user} home={home}
             onLogout={handleLogout}
             isDark={isDark} onToggleTheme={toggleTheme}
             initialLike={pendingLike}
@@ -259,14 +433,150 @@ export default function App() {
   );
 }
 
+// ─── GeoOnboardingScreen ──────────────────────────────────────────────────────
+function GeoOnboardingScreen({ onBack, onDone }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [manual, setManual] = useState(false);
+
+  const useBrowserGeo = () => {
+    setError("");
+    if (!navigator.geolocation) { setManual(true); return; }
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLoading(false);
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        const d = nearestDistrict(coords);
+        onDone({ lat: coords.lat, lng: coords.lng, district: d.name });
+      },
+      () => {
+        setLoading(false);
+        setError("Не удалось определить местоположение. Выберите район вручную.");
+        setManual(true);
+      },
+      { enableHighAccuracy: false, timeout: 8000 }
+    );
+  };
+
+  const pickDistrict = (d) => onDone({ lat: d.lat, lng: d.lng, district: d.name });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", padding: "40px 24px 30px", minHeight: "100%" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28 }}>
+        <button onClick={onBack} style={{
+          width: 36, height: 36, borderRadius: 11, border: `1.5px solid ${C.line}`,
+          background: "#fff", cursor: "pointer", display: "grid", placeItems: "center", color: C.muted,
+        }}>
+          <ChevronLeft size={18} />
+        </button>
+      </div>
+
+      <div style={{
+        width: 64, height: 64, borderRadius: 20, background: `${C.brand}14`,
+        display: "grid", placeItems: "center", marginBottom: 20,
+      }}>
+        <MapPin size={32} color={C.brand} />
+      </div>
+
+      <h2 style={{ margin: "0 0 6px", fontSize: 23, fontWeight: 800, color: C.ink, letterSpacing: -0.4 }}>
+        Работа рядом с домом
+      </h2>
+      <p style={{ margin: "0 0 28px", fontSize: 14.5, color: C.muted, lineHeight: 1.5 }}>
+        Покажем вакансии в пешей доступности. Укажите, где вы находитесь —
+        мы отсортируем ленту по близости.
+      </p>
+
+      {!manual ? (
+        <>
+          <button onClick={useBrowserGeo} disabled={loading} style={{
+            width: "100%", padding: "15px 0", borderRadius: 14, border: "none",
+            background: loading ? "#C4BFF0" : C.brand, color: "#fff",
+            fontSize: 15.5, fontWeight: 800, cursor: loading ? "default" : "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            <MapPin size={18} />
+            {loading ? "Определяем…" : "Определить автоматически"}
+          </button>
+
+          <button onClick={() => setManual(true)} style={{
+            marginTop: 12, width: "100%", padding: "13px 0", borderRadius: 14,
+            border: `1.5px solid ${C.line}`, background: "#fff",
+            color: C.ink, fontSize: 14.5, fontWeight: 700, cursor: "pointer",
+          }}>
+            Выбрать район вручную
+          </button>
+
+          <p style={{ marginTop: "auto", paddingTop: 24, fontSize: 11.5, color: "#B0ACBA", textAlign: "center", lineHeight: 1.6 }}>
+            Мы не показываем ваш точный адрес работодателям —
+            только район и расстояние до вакансии.
+          </p>
+        </>
+      ) : (
+        <>
+          {error && (
+            <p style={{ margin: "0 0 14px", fontSize: 13, color: C.err, fontWeight: 600 }}>{error}</p>
+          )}
+          <p style={{ margin: "0 0 12px", fontSize: 12.5, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.6 }}>
+            Ваш район
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {DISTRICTS.map((d) => (
+              <button key={d.id} onClick={() => pickDistrict(d)} style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "13px 16px", borderRadius: 14, cursor: "pointer",
+                border: `1.5px solid ${C.line}`, background: "#fff", textAlign: "left",
+              }}
+                onMouseEnter={(e) => e.currentTarget.style.background = "#F5F3EF"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "#fff"}
+              >
+                <MapPin size={16} color={C.brand} />
+                <span style={{ fontSize: 14.5, fontWeight: 700, color: C.ink }}>{d.name}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── RadiusSelector ───────────────────────────────────────────────────────────
+function RadiusSelector({ value, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+      {RADIUS_OPTIONS.map((opt) => {
+        const active = value === opt.key;
+        return (
+          <button key={opt.key} onClick={() => onChange(opt.key)} style={{
+            flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
+            fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 20, cursor: "pointer",
+            border: `1.5px solid ${active ? C.brand : C.line}`,
+            background: active ? C.brand : "rgba(255,255,255,.85)",
+            color: active ? "#fff" : C.muted,
+            whiteSpace: "nowrap", transition: "all .15s",
+          }}>
+            {opt.label}
+            {opt.sub && (
+              <span style={{ fontSize: 10.5, fontWeight: 600, opacity: 0.8 }}>{opt.sub}</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 const GUEST_SWIPE_LIMIT = 25;
 const guestKey = () => `swipr_guest_${new Date().toISOString().slice(0, 10)}`;
 
 // ─── GuestFeedScreen ──────────────────────────────────────────────────────────
-function GuestFeedScreen({ onLike, onRegister }) {
+function GuestFeedScreen({ home, onLike, onRegister }) {
   const [si, setSi] = useState(0);
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false });
   const [exit, setExit] = useState(null);
+  const [radius, setRadius] = useState("nearby");
   const [guestSwipes, setGuestSwipes] = useState(() => {
     try {
       const s = JSON.parse(localStorage.getItem(guestKey()) || "{}");
@@ -275,7 +585,8 @@ function GuestFeedScreen({ onLike, onRegister }) {
   });
   const startRef = useRef(null);
 
-  const rawDeck = COMPANIES.filter((c) => c.moderation === "approved");
+  const approved = COMPANIES.filter((c) => c.moderation === "approved");
+  const rawDeck = geoDeck(approved, home, radius);
   const current = rawDeck[si];
   const next = rawDeck[si + 1];
   const swipesLeft = Math.max(0, GUEST_SWIPE_LIMIT - guestSwipes);
@@ -363,34 +674,63 @@ function GuestFeedScreen({ onLike, onRegister }) {
             border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer",
           }}>Войти</button>
         </div>
+
+        {/* Гео-строка: район дома + кол-во рядом */}
+        {home && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, pointerEvents: "auto" }}>
+            <MapPin size={13} color={C.brand} />
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>{home.district}</span>
+            <span style={{ fontSize: 12.5, color: C.muted }}>
+              · {rawDeck.length} {rawDeck.length === 1 ? "вакансия" : "вакансий"} рядом
+            </span>
+          </div>
+        )}
+
+        {/* Селектор радиуса */}
+        <div style={{ pointerEvents: "auto", marginTop: 8 }}>
+          <RadiusSelector value={radius} onChange={(v) => { setRadius(v); setSi(0); }} />
+        </div>
       </div>
 
       {/* Колода */}
-      <div style={{ position: "absolute", inset: 0 }}>
+      <div style={{ position: "absolute", inset: 0, paddingTop: 0 }}>
         {(!current || si >= rawDeck.length) ? (
           <div style={{
             position: "absolute", inset: 0, display: "flex", flexDirection: "column",
             alignItems: "center", justifyContent: "center", padding: 32, textAlign: "center",
           }}>
             <div style={{ width: 64, height: 64, borderRadius: 18, background: `${C.brand}14`, display: "grid", placeItems: "center", marginBottom: 16 }}>
-              <Star size={30} color={C.brand} />
+              {rawDeck.length === 0 ? <MapPin size={30} color={C.brand} /> : <Star size={30} color={C.brand} />}
             </div>
-            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: C.ink }}>Пока всё просмотрено</h3>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: C.ink }}>
+              {rawDeck.length === 0 ? "Рядом пока пусто" : "Пока всё просмотрено"}
+            </h3>
             <p style={{ margin: "8px 0 20px", fontSize: 13.5, color: C.muted, lineHeight: 1.5 }}>
-              Зарегистрируйтесь, чтобы видеть все вакансии и откликаться
+              {rawDeck.length === 0 && radius !== "city"
+                ? "В этом радиусе нет вакансий. Расширьте радиус поиска."
+                : "Зарегистрируйтесь, чтобы видеть все вакансии и откликаться"}
             </p>
-            <button onClick={onRegister} style={{
-              background: C.brand, color: "#fff", border: "none", borderRadius: 14,
-              padding: "13px 28px", fontSize: 15, fontWeight: 800, cursor: "pointer",
-            }}>
-              Зарегистрироваться
-            </button>
+            {rawDeck.length === 0 && radius !== "city" ? (
+              <button onClick={() => { setRadius("city"); setSi(0); }} style={{
+                background: C.brand, color: "#fff", border: "none", borderRadius: 14,
+                padding: "13px 28px", fontSize: 15, fontWeight: 800, cursor: "pointer",
+              }}>
+                Показать весь город
+              </button>
+            ) : (
+              <button onClick={onRegister} style={{
+                background: C.brand, color: "#fff", border: "none", borderRadius: 14,
+                padding: "13px 28px", fontSize: 15, fontWeight: 800, cursor: "pointer",
+              }}>
+                Зарегистрироваться
+              </button>
+            )}
           </div>
         ) : (
           <>
             {next && (
               <div style={{ position: "absolute", inset: 0 }}>
-                <CardBody item={next} mode="seeker" dim fullscreen />
+                <CardBody item={next} mode="seeker" dim fullscreen distance={next._dist} />
               </div>
             )}
             <div
@@ -405,7 +745,7 @@ function GuestFeedScreen({ onLike, onRegister }) {
             >
               <Stamp text="ОТКЛИК" color={C.apply} opacity={likeOpacity} side="left" />
               <Stamp text="ПРОПУСК" color={C.skip} opacity={skipOpacity} side="right" />
-              <CardBody item={current} mode="seeker" fullscreen />
+              <CardBody item={current} mode="seeker" fullscreen distance={current._dist} />
             </div>
           </>
         )}
@@ -479,10 +819,9 @@ function GuestFeedScreen({ onLike, onRegister }) {
 }
 
 // ─── ProfileSetupScreen ───────────────────────────────────────────────────────
-function ProfileSetupScreen({ user, onDone }) {
+function ProfileSetupScreen({ user, home, onDone }) {
   const [name, setName] = useState("");
   const [position, setPosition] = useState("");
-  const [areaId, setAreaId] = useState(null);
   const [selectedSkills, setSelectedSkills] = useState([]);
   const [query, setQuery] = useState("");
   const [step, setStep] = useState(1); // 1: basic info, 2: skills
@@ -512,7 +851,7 @@ function ProfileSetupScreen({ user, onDone }) {
   };
 
   const handleDone = () => {
-    onDone({ name, position, areaId, skills: selectedSkills });
+    onDone({ name, position, district: home?.district ?? null, geo: home, skills: selectedSkills });
   };
 
   return (
@@ -573,26 +912,23 @@ function ProfileSetupScreen({ user, onDone }) {
             }
           />
 
-          {/* Город */}
+          {/* Район (из геолокации) */}
           <div>
             <label style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: C.ink, marginBottom: 8 }}>
-              Город
+              Ваш район
             </label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {DICT_AREAS.map((a) => {
-                const active = areaId === a.id;
-                return (
-                  <button key={a.id} onClick={() => setAreaId(active ? null : a.id)} style={{
-                    fontSize: 13, fontWeight: 600, padding: "7px 15px", borderRadius: 20, cursor: "pointer",
-                    border: `1.5px solid ${active ? C.brand : C.line}`,
-                    background: active ? `${C.brand}14` : "#fff",
-                    color: active ? C.brand : C.muted,
-                    transition: "all .15s",
-                  }}>
-                    {a.name}
-                  </button>
-                );
-              })}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "11px 14px", borderRadius: 12,
+              border: `1.5px solid ${C.line}`, background: `${C.brand}08`,
+            }}>
+              <MapPin size={16} color={C.brand} />
+              <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>
+                {home?.district ?? "Не указан"}
+              </span>
+              <span style={{ marginLeft: "auto", fontSize: 11.5, color: C.muted }}>
+                из геолокации
+              </span>
             </div>
           </div>
 
@@ -1074,7 +1410,7 @@ function createNegotiation(role, item) {
 }
 
 // ─── MainApp ──────────────────────────────────────────────────────────────────
-function MainApp({ role, user, onLogout, isDark, onToggleTheme, initialLike }) {
+function MainApp({ role, user, home, onLogout, isDark, onToggleTheme, initialLike }) {
   const mode = role;
   const [tab, setTab] = useState("feed");
   const [negotiations, setNegotiations] = useState([]);
@@ -1169,7 +1505,7 @@ function MainApp({ role, user, onLogout, isDark, onToggleTheme, initialLike }) {
       {/* Контент активной вкладки */}
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
         {tab === "feed" && (
-          <FeedTab mode={mode} user={user} onLogout={onLogout} onLike={handleLike} userSkills={userSkills} />
+          <FeedTab mode={mode} user={user} home={home} onLogout={onLogout} onLike={handleLike} userSkills={userSkills} />
         )}
         {tab === "chats" && !activeChatNeg && (
           <ChatsPlaceholder negotiations={negotiations} onOpenChat={openChat} />
@@ -1453,13 +1789,14 @@ function applyFilters(deck, filters, mode) {
 }
 
 // ─── Feed tab (свайп-лента) ───────────────────────────────────────────────────
-function FeedTab({ mode, user, onLogout, onLike, userSkills }) {
+function FeedTab({ mode, user, home, onLogout, onLike, userSkills }) {
   const [si, setSi] = useState(0);
   const [hi, setHi] = useState(0);
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false });
   const [exit, setExit] = useState(null);
   const [toast, setToast] = useState(null);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [radius, setRadius] = useState("nearby");
   const [filters, setFilters] = useState({ city: null, salaryMin: null, expMin: null });
   const [swipesUsed, setSwipesUsed] = useState(() => {
     try {
@@ -1474,9 +1811,13 @@ function FeedTab({ mode, user, onLogout, onLike, userSkills }) {
     localStorage.setItem("swipr_swipes", JSON.stringify({ date: todayKey(), count: n }));
   };
 
+  // гео-сортировка только в режиме соискателя (у нанимателя дома нет)
+  const useGeo = mode === "seeker" && !!home;
   const rawDeck = mode === "seeker" ? COMPANIES : CANDIDATES;
   const filteredDeck = applyFilters(rawDeck, filters, mode);
-  const deck = sortedDeck(filteredDeck, userSkills);
+  const deck = useGeo
+    ? geoDeck(filteredDeck, home, radius)
+    : sortedDeck(filteredDeck, userSkills);
   const idx = mode === "seeker" ? si : hi;
   const setIdx = mode === "seeker" ? setSi : setHi;
   const current = deck[idx];
@@ -1581,17 +1922,37 @@ function FeedTab({ mode, user, onLogout, onLike, userSkills }) {
             border: `1px solid ${C.line}`, borderRadius: 8, padding: "4px 9px", cursor: "pointer",
           }}>Выйти</button>
         </div>
+
+        {/* Гео-строка + селектор радиуса (только соискатель) */}
+        {useGeo && (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, pointerEvents: "auto" }}>
+              <MapPin size={13} color={roleColor} />
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>{home.district}</span>
+              <span style={{ fontSize: 12.5, color: C.muted }}>
+                · {deck.length} {deck.length === 1 ? "вакансия" : "вакансий"} рядом
+              </span>
+            </div>
+            <div style={{ pointerEvents: "auto", marginTop: 8 }}>
+              <RadiusSelector value={radius} onChange={(v) => { setRadius(v); setIdx(0); }} />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Колода карточек — на весь экран */}
       <div style={{ position: "absolute", inset: 0 }}>
         {!current ? (
-          <EmptyState onReset={reset} mode={mode} />
+          (useGeo && deck.length === 0 && radius !== "city") ? (
+            <RadiusEmpty onExpand={() => { setRadius("city"); setIdx(0); }} />
+          ) : (
+            <EmptyState onReset={reset} mode={mode} />
+          )
         ) : (
           <>
             {next && (
               <div style={{ position: "absolute", inset: 0 }}>
-                <CardBody item={next} mode={mode} dim fullscreen />
+                <CardBody item={next} mode={mode} dim fullscreen distance={useGeo ? next._dist : undefined} />
               </div>
             )}
             <div
@@ -1606,7 +1967,7 @@ function FeedTab({ mode, user, onLogout, onLike, userSkills }) {
             >
               <Stamp text="ОТКЛИК" color={C.apply} opacity={likeOpacity} side="left" />
               <Stamp text="ПРОПУСК" color={C.skip} opacity={skipOpacity} side="right" />
-              <CardBody item={current} mode={mode} fullscreen />
+              <CardBody item={current} mode={mode} fullscreen distance={useGeo ? current._dist : undefined} />
             </div>
           </>
         )}
@@ -2735,8 +3096,11 @@ function CardShell({ children }) {
   );
 }
 
-function CardBody({ item, mode, dim, fullscreen }) {
+function CardBody({ item, mode, dim, fullscreen, distance }) {
   const Icon = item.icon;
+  const distLabel = distance != null
+    ? `${item.district ?? item.city} · ${fmtKm(distance)} · ~${walkMin(distance)} мин пешком`
+    : item.city;
 
   if (fullscreen) {
     return (
@@ -2812,10 +3176,11 @@ function CardBody({ item, mode, dim, fullscreen }) {
           <p style={{ margin: "4px 0 0", fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,.75)" }}>
             {mode === "seeker" ? item.company : item.role}
           </p>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, color: "rgba(255,255,255,.65)", fontSize: 13 }}>
-            <MapPin size={13} /> {item.city}
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, color: "rgba(255,255,255,.7)", fontSize: 13, flexWrap: "wrap" }}>
+            <MapPin size={13} />
+            <span style={{ fontWeight: distance != null ? 700 : 400 }}>{distLabel}</span>
             {mode === "seeker" && (
-              <span style={{ marginLeft: 10, fontWeight: 800, color: "rgba(255,255,255,.9)", fontSize: 14 }}>
+              <span style={{ marginLeft: 10, fontWeight: 800, color: "rgba(255,255,255,.95)", fontSize: 14 }}>
                 {item.salary}
               </span>
             )}
@@ -2953,6 +3318,33 @@ function ActionBtn({ children, onClick, bg, ring, color, size }) {
       onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
       onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
     >{children}</button>
+  );
+}
+
+function RadiusEmpty({ onExpand }) {
+  return (
+    <div style={{
+      position: "absolute", inset: 0, background: "#fff", borderRadius: 26,
+      border: `1px dashed ${C.line}`, display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", textAlign: "center", padding: 24,
+    }}>
+      <div style={{
+        width: 64, height: 64, borderRadius: 18, background: `${C.brand}14`,
+        display: "grid", placeItems: "center", marginBottom: 16,
+      }}>
+        <MapPin size={30} color={C.brand} />
+      </div>
+      <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: C.ink }}>Рядом пока пусто</h3>
+      <p style={{ margin: "8px 0 18px", fontSize: 13.5, color: C.muted, maxWidth: 240, lineHeight: 1.5 }}>
+        В этом радиусе нет подходящих вакансий. Попробуйте расширить зону поиска.
+      </p>
+      <button onClick={onExpand} style={{
+        background: C.brand, color: "#fff", border: "none", cursor: "pointer",
+        padding: "11px 22px", borderRadius: 12, fontSize: 14, fontWeight: 700,
+      }}>
+        Показать весь город
+      </button>
+    </div>
   );
 }
 
