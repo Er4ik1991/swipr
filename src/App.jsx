@@ -6,6 +6,7 @@ import {
   Layers, MessageCircle, Send, Paperclip, MoreVertical,
   Video, Building, PhoneCall, Calendar, Link, ExternalLink,
   SlidersHorizontal, Zap, ShieldCheck, Clock, AlertCircle,
+  FileText, Plus, Upload, Trash2, Package, ShoppingBag,
 } from "lucide-react";
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -75,6 +76,44 @@ const DICT_AREAS = [
 
 const skillName = (id) => DICT_SKILLS.find((s) => s.id === id)?.name ?? id;
 
+// ─── Категории вакансий (раздел 2 брифа) ──────────────────────────────────────
+const CATEGORIES = [
+  { id: "pvz",      label: "ПВЗ и склад",   emoji: "📦", color: "#3B5BDB" },
+  { id: "food",     label: "Общепит",        emoji: "☕", color: "#C2873E" },
+  { id: "beauty",   label: "Красота",        emoji: "💅", color: "#E879A8" },
+  { id: "edu",      label: "Образование",    emoji: "📚", color: "#6C5CE7" },
+  { id: "retail",   label: "Магазины",       emoji: "🛍", color: "#16A06A" },
+  { id: "services", label: "Услуги",         emoji: "🧹", color: "#1098AD" },
+];
+const categoryById = (id) => CATEGORIES.find((c) => c.id === id) ?? null;
+
+// тип оплаты → крупная сумма + подпись
+function payParts(item) {
+  const v = item.payValue;
+  const map = {
+    hour:  { unit: "в час" },
+    shift: { unit: "за смену" },
+    day:   { unit: "за выход" },
+    month: { unit: "в месяц" },
+  };
+  if (item.payType && map[item.payType] && v != null) {
+    return { big: `${v.toLocaleString("ru")} ₽`, unit: map[item.payType].unit };
+  }
+  // service / процент / прочее — берём текст из salary
+  return { big: item.salary ?? "", unit: "" };
+}
+
+// требования вакансии → набор чипов
+function requirementChips(req) {
+  if (!req) return [];
+  const chips = [];
+  if (req.needsMedBook) chips.push("Медкнижка");
+  if (req.age18)        chips.push("18+");
+  if (req.license)      chips.push(`Права ${req.license}`);
+  if (req.ownTools)     chips.push("Свой инструмент");
+  return chips;
+}
+
 // ─── Гео: районы с координатами (моки) ────────────────────────────────────────
 const DISTRICTS = [
   { id: "sokol",        name: "Сокол",            lat: 55.8050, lng: 37.5150 },
@@ -132,101 +171,131 @@ const COMPANIES_RAW = [
   {
     company: "Пункт выдачи Ozon", logo: "OZ", logoBg: "#0F4FFF",
     role: "Оператор ПВЗ", districtId: "sokol", areaId: "moscow",
-    salary: "от 180 ₽/час", salaryFrom: 35000, icon: Building2,
-    photoLabel: "Зал выдачи", photo: ["#BFD0FF", "#3B5BDB"],
+    category: "pvz", payType: "hour", payValue: 180, schedule: "2/2",
+    employmentType: "part", urgency: "normal",
+    requirements: { noExperienceOk: true, age18: true },
+    salary: "от 180 ₽/час", salaryFrom: 35000, icon: Package,
+    photoLabel: "Зал выдачи", photo: ["#BFD0FF", "#3B5BDB"], placePhoto: null,
     blurb: "Выдаём заказы рядом с метро. Сменный график 2/2, можно совмещать с учёбой. Научим всему на месте.",
-    tags: ["Без опыта", "2/2", "Рядом с метро"],
-    skills: [], noExperienceOk: true,
+    tags: ["Рядом с метро"],
+    skills: [],
     moderation: "approved", verified: true,
   },
   {
     company: "Кофейня «Тёплый угол»", logo: "ТУ", logoBg: "#C08457",
     role: "Бариста", districtId: "aeroport", areaId: "moscow",
+    category: "food", payType: "hour", payValue: 220, schedule: "гибкий",
+    employmentType: "part", urgency: "normal",
+    requirements: { noExperienceOk: true },
     salary: "от 220 ₽/час", salaryFrom: 42000, icon: Coffee,
-    photoLabel: "Барная стойка", photo: ["#E7CBA9", "#9B6B43"],
+    photoLabel: "Барная стойка", photo: ["#E7CBA9", "#9B6B43"], placePhoto: null,
     blurb: "Маленькая кофейня у дома. Обучим латте-арту, кофе бариста — бесплатно. Чаевые ваши.",
-    tags: ["Можно без опыта", "Чаевые", "Гибкий график"],
-    skills: ["barista", "latte_art"], noExperienceOk: true,
+    tags: ["Чаевые", "Обучение"],
+    skills: ["barista", "latte_art"],
     moderation: "approved", verified: true,
   },
   {
     company: "Салон «Лак&Шик»", logo: "ЛШ", logoBg: "#E879A8",
     role: "Мастер маникюра", districtId: "voykovskaya", areaId: "moscow",
+    category: "beauty", payType: "service", payValue: null, schedule: "2/2",
+    employmentType: "full", urgency: "normal",
+    requirements: { noExperienceOk: false, ownTools: true },
     salary: "50% с услуги", salaryFrom: 80000, icon: Sparkles,
-    photoLabel: "Рабочее место мастера", photo: ["#F7C5DE", "#E879A8"],
+    photoLabel: "Рабочее место мастера", photo: ["#F7C5DE", "#E879A8"], placePhoto: null,
     blurb: "Уютный салон, своё кресло и витрина гель-лаков. График 2/2, аренда кресла или процент.",
-    tags: ["Своё кресло", "2/2", "Премии за отзывы"],
-    skills: ["manicure", "gel", "nail_design"], noExperienceOk: false,
+    tags: ["Своё кресло", "Премии за отзывы"],
+    skills: ["manicure", "gel", "nail_design"],
     moderation: "approved", verified: true,
   },
   {
     company: "Склад «БыстроЛогистик»", logo: "БЛ", logoBg: "#3FB28B",
     role: "Комплектовщик", districtId: "voykovskaya", areaId: "moscow",
-    salary: "от 200 ₽/час", salaryFrom: 45000, icon: Building2,
-    photoLabel: "Складская зона", photo: ["#BCE3D4", "#2E8C6A"],
+    category: "pvz", payType: "shift", payValue: 2400, schedule: "сменный",
+    employmentType: "part", urgency: "tomorrow",
+    requirements: { noExperienceOk: true, age18: true },
+    salary: "от 2400 ₽/смена", salaryFrom: 45000, icon: Package,
+    photoLabel: "Складская зона", photo: ["#BCE3D4", "#2E8C6A"], placePhoto: null,
     blurb: "Собираем заказы на тёплом складе. Можно выйти уже завтра, оплата еженедельно.",
-    tags: ["Без опыта", "Срочно", "Оплата раз в неделю"],
-    skills: [], noExperienceOk: true,
+    tags: ["Оплата раз в неделю"],
+    skills: [],
     moderation: "approved", verified: true,
   },
   {
     company: "Пекарня «Корка»", logo: "К", logoBg: "#D98E3A",
     role: "Продавец-кассир", districtId: "sokol", areaId: "moscow",
-    salary: "от 190 ₽/час", salaryFrom: 38000, icon: Coffee,
-    photoLabel: "Витрина пекарни", photo: ["#F1D9B5", "#C2873E"],
+    category: "retail", payType: "hour", payValue: 190, schedule: "вечерние смены",
+    employmentType: "part", urgency: "normal",
+    requirements: { noExperienceOk: true, needsMedBook: true },
+    salary: "от 190 ₽/час", salaryFrom: 38000, icon: ShoppingBag,
+    photoLabel: "Витрина пекарни", photo: ["#F1D9B5", "#C2873E"], placePhoto: null,
     blurb: "Продаём свежий хлеб и выпечку. Утренние или вечерние смены — выбирайте сами.",
-    tags: ["Без опыта", "Вечерние смены", "Скидки сотрудникам"],
-    skills: [], noExperienceOk: true,
+    tags: ["Скидки сотрудникам"],
+    skills: [],
     moderation: "approved", verified: false,
   },
   {
     company: "Студия «Растишка»", logo: "Р", logoBg: "#7C6FF0",
     role: "Педагог-вожатый", districtId: "begovaya", areaId: "moscow",
+    category: "edu", payType: "day", payValue: 600, schedule: "выходные",
+    employmentType: "oneoff", urgency: "normal",
+    requirements: { noExperienceOk: true },
     salary: "от 600 ₽/занятие", salaryFrom: 40000, icon: GraduationCap,
-    photoLabel: "Игровая комната", photo: ["#D6CFFA", "#6C5CE7"],
+    photoLabel: "Игровая комната", photo: ["#D6CFFA", "#6C5CE7"], placePhoto: null,
     blurb: "Детский клуб ищет вожатого на выходные. Любите детей — научим программе.",
-    tags: ["Выходные", "Можно без опыта", "Подработка"],
-    skills: [], noExperienceOk: true,
+    tags: ["Подработка"],
+    skills: [],
     moderation: "approved", verified: true,
   },
   {
     company: "Автосервис «Гараж 24»", logo: "Г24", logoBg: "#5B8DEF",
     role: "Автомойщик", districtId: "begovaya", areaId: "moscow",
+    category: "services", payType: "hour", payValue: 210, schedule: "сменный",
+    employmentType: "part", urgency: "normal",
+    requirements: { noExperienceOk: true },
     salary: "от 210 ₽/час", salaryFrom: 46000, icon: Wrench,
-    photoLabel: "Моечный пост", photo: ["#BFD4F2", "#3F6FCB"],
+    photoLabel: "Моечный пост", photo: ["#BFD4F2", "#3F6FCB"], placePhoto: null,
     blurb: "Моем авто рядом с ТТК. Сдельная оплата + процент, можно без опыта.",
-    tags: ["Без опыта", "Сдельно", "Парковка"],
-    skills: [], noExperienceOk: true,
+    tags: ["Сдельно", "Парковка"],
+    skills: [],
     moderation: "approved", verified: false,
   },
   {
     company: "Магазин «У дома»", logo: "УД", logoBg: "#16A06A",
     role: "Продавец-консультант", districtId: "presnensky", areaId: "moscow",
-    salary: "от 195 ₽/час", salaryFrom: 41000, icon: Building2,
-    photoLabel: "Торговый зал", photo: ["#BCEBD6", "#159E68"],
+    category: "retail", payType: "hour", payValue: 195, schedule: "5/2",
+    employmentType: "full", urgency: "normal",
+    requirements: { noExperienceOk: true },
+    salary: "от 195 ₽/час", salaryFrom: 41000, icon: ShoppingBag,
+    photoLabel: "Торговый зал", photo: ["#BCEBD6", "#159E68"], placePhoto: null,
     blurb: "Продукты у дома. Смены по 8 часов, дружный коллектив, обеды за счёт магазина.",
-    tags: ["Без опыта", "5/2", "Обеды"],
-    skills: [], noExperienceOk: true,
+    tags: ["Обеды"],
+    skills: [],
     moderation: "pending", verified: false,
   },
   {
     company: "Клининг «Чисто и Точка»", logo: "ЧТ", logoBg: "#22B8CF",
     role: "Уборщик-курьер", districtId: "tverskoy", areaId: "moscow",
-    salary: "от 230 ₽/час", salaryFrom: 44000, icon: Wrench,
-    photoLabel: "Объект уборки", photo: ["#C2ECF2", "#1098AD"],
+    category: "services", payType: "shift", payValue: 1800, schedule: "гибкий",
+    employmentType: "oneoff", urgency: "urgent",
+    requirements: { noExperienceOk: true },
+    salary: "от 1800 ₽/смена", salaryFrom: 44000, icon: Wrench,
+    photoLabel: "Объект уборки", photo: ["#C2ECF2", "#1098AD"], placePhoto: null,
     blurb: "Уборка офисов в центре. Разовые выходы и постоянные смены, оплата в день выхода.",
-    tags: ["Разовая", "Срочно", "Оплата в день"],
-    skills: [], noExperienceOk: true,
+    tags: ["Оплата в день"],
+    skills: [],
     moderation: "approved", verified: true,
   },
   {
     company: "Бар «На углу»", logo: "НУ", logoBg: "#9B59B6",
     role: "Официант", districtId: "khamovniki", areaId: "moscow",
+    category: "food", payType: "hour", payValue: 200, schedule: "вечерние смены",
+    employmentType: "part", urgency: "normal",
+    requirements: { noExperienceOk: true, age18: true },
     salary: "от 200 ₽/час + чай", salaryFrom: 43000, icon: Coffee,
-    photoLabel: "Зал бара", photo: ["#E0CCEF", "#8E44AD"],
+    photoLabel: "Зал бара", photo: ["#E0CCEF", "#8E44AD"], placePhoto: null,
     blurb: "Вечерние смены в баре. Чаевые делим поровну, кормим перед сменой.",
-    tags: ["Вечерние смены", "Чаевые", "Можно без опыта"],
-    skills: [], noExperienceOk: true,
+    tags: ["Чаевые"],
+    skills: [],
     moderation: "approved", verified: false,
   },
   // дальние — для демонстрации фильтра по радиусу
@@ -234,22 +303,28 @@ const COMPANIES_RAW = [
     company: "Кофейня «Пар»", logo: "ПР", logoBg: "#C08457",
     role: "Бариста", districtId: null, areaId: "spb",
     geo: { lat: 59.9343, lng: 30.3351, district: "Центр" },
+    category: "food", payType: "hour", payValue: 210, schedule: "гибкий",
+    employmentType: "part", urgency: "normal",
+    requirements: { noExperienceOk: true },
     salary: "от 210 ₽/час", salaryFrom: 60000, icon: Coffee,
-    photoLabel: "Барная стойка", photo: ["#E7CBA9", "#9B6B43"],
+    photoLabel: "Барная стойка", photo: ["#E7CBA9", "#9B6B43"], placePhoto: null,
     blurb: "Specialty-кофейня у канала в Санкт-Петербурге.",
     tags: ["Чаевые", "Обучение"],
-    skills: ["barista", "latte_art", "specialty"], noExperienceOk: true,
+    skills: ["barista", "latte_art", "specialty"],
     moderation: "approved", verified: false,
   },
   {
     company: "Автосервис «Гараж 24»", logo: "Г24", logoBg: "#3FB28B",
     role: "Автомеханик", districtId: null, areaId: "kazan",
     geo: { lat: 55.7963, lng: 49.1088, district: "Казань" },
+    category: "services", payType: "hour", payValue: 280, schedule: "5/2",
+    employmentType: "full", urgency: "normal",
+    requirements: { noExperienceOk: false, license: "B", ownTools: true },
     salary: "от 280 ₽/час", salaryFrom: 90000, icon: Wrench,
-    photoLabel: "Рабочий бокс", photo: ["#BCE3D4", "#2E8C6A"],
+    photoLabel: "Рабочий бокс", photo: ["#BCE3D4", "#2E8C6A"], placePhoto: null,
     blurb: "4 поста, современный инструмент. Казань.",
     tags: ["Сдельно+оклад", "Парковка"],
-    skills: ["mechanic", "diagnostics"], noExperienceOk: false,
+    skills: ["mechanic", "diagnostics"],
     moderation: "approved", verified: false,
   },
 ];
@@ -270,7 +345,11 @@ const CANDIDATES = [
     name: "Анна К.", role: "Мастер маникюра", city: "Москва", areaId: "moscow",
     icon: Sparkles, photo: ["#F7C5DE", "#D45C95"], exp: "5 лет опыта", expYears: 5,
     blurb: "Аппаратный и комбинированный маникюр, дизайн. Своя база клиентов.",
-    creds: ["Сертификат: аппаратный маникюр", "Курс «Дизайн ногтей 2.0»", "Диплом колледжа"],
+    documents: [
+      { kind: "diploma",     title: "Диплом колледжа",            issuer: "Колледж сферы услуг", verified: true },
+      { kind: "certificate", title: "Аппаратный маникюр",         issuer: "Школа Nail Pro",      verified: true },
+      { kind: "certificate", title: "Курс «Дизайн ногтей 2.0»",   issuer: "OnlineNail",          verified: false },
+    ],
     skills: ["manicure", "gel", "nail_design"],
     moderation: "approved", verified: true,
   },
@@ -278,7 +357,11 @@ const CANDIDATES = [
     name: "Игорь П.", role: "Офис-менеджер", city: "Москва", areaId: "moscow",
     icon: Building2, photo: ["#BFD4F2", "#3F6FCB"], exp: "3 года опыта", expYears: 3,
     blurb: "Документооборот, закупки, travel-поддержка руководителя. Английский B2.",
-    creds: ["1С: Документооборот", "Курс делопроизводства", "Английский B2"],
+    documents: [
+      { kind: "certificate", title: "1С: Документооборот",        issuer: "1С-Учебный центр", verified: true },
+      { kind: "certificate", title: "Курс делопроизводства",      issuer: "Нетология",        verified: false },
+      { kind: "certificate", title: "Английский B2",              issuer: "EF SET",           verified: true },
+    ],
     skills: ["office_mgmt", "doc_flow", "english_b2", "1c"],
     moderation: "approved", verified: false,
   },
@@ -286,7 +369,11 @@ const CANDIDATES = [
     name: "Марина С.", role: "Бариста", city: "Санкт-Петербург", areaId: "spb",
     icon: Coffee, photo: ["#E7CBA9", "#8A5A33"], exp: "4 года опыта", expYears: 4,
     blurb: "Specialty-кофе, латте-арт, работа на потоке. Открывала точку с нуля.",
-    creds: ["SCA Barista Skills (Foundation)", "Курс по альтернативе", "Санкнижка"],
+    documents: [
+      { kind: "certificate", title: "SCA Barista Skills (Foundation)", issuer: "SCA",        verified: true },
+      { kind: "certificate", title: "Курс по альтернативе",            issuer: "Tasty Coffee", verified: false },
+      { kind: "diploma",     title: "Медкнижка (санкнижка)",           issuer: "ЦГиЭ",         verified: true },
+    ],
     skills: ["barista", "latte_art", "specialty"],
     moderation: "pending", verified: true,
   },
@@ -2897,6 +2984,17 @@ function ProfileScreen({ user, role, userSkills, onSkillsChange, isDark, onToggl
   const isSeeker = role === "seeker";
   const roleColor = isSeeker ? C.brand : C.apply;
   const [query, setQuery] = useState("");
+  const [docs, setDocs] = useState([]);
+  const fileRef = useRef(null);
+  const pendingKind = useRef("certificate");
+
+  const openPicker = (kind) => { pendingKind.current = kind; fileRef.current?.click(); };
+  const onFile = (e) => {
+    const f = e.target.files?.[0];
+    if (f) setDocs((p) => [...p, { kind: pendingKind.current, title: f.name, issuer: "Загружено вами", verified: false }]);
+    e.target.value = "";
+  };
+  const removeDoc = (i) => setDocs((p) => p.filter((_, idx) => idx !== i));
 
   const suggestions = query.trim()
     ? DICT_SKILLS.filter((s) =>
@@ -2944,6 +3042,81 @@ function ProfileScreen({ user, role, userSkills, onSkillsChange, isDark, onToggl
       </div>
 
       <div style={{ padding: "20px 20px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
+
+        {/* ── Дипломы и сертификаты (только соискатель, после фото) ── */}
+        {isSeeker && (
+          <div>
+            <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 800, color: C.ink }}>
+              Дипломы и сертификаты
+            </h3>
+            <p style={{ margin: "0 0 12px", fontSize: 12.5, color: C.muted }}>
+              Загрузите документы — они повышают шанс приглашения на собеседование
+            </p>
+
+            <input ref={fileRef} type="file" accept="image/*,.pdf" onChange={onFile} style={{ display: "none" }} />
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+              {docs.length === 0 && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "14px 14px",
+                  borderRadius: 12, border: `1.5px dashed ${C.line}`, background: C.card,
+                }}>
+                  <FileText size={18} color={C.muted} />
+                  <span style={{ fontSize: 13, color: C.muted }}>Пока ничего не загружено</span>
+                </div>
+              )}
+              {docs.map((doc, i) => (
+                <div key={i} style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "11px 12px",
+                  borderRadius: 12, border: `1.5px solid ${C.line}`, background: C.card,
+                }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+                    background: doc.kind === "diploma" ? `${C.brand}18` : `${C.apply}18`,
+                    display: "grid", placeItems: "center",
+                  }}>
+                    {doc.kind === "diploma"
+                      ? <GraduationCap size={16} color={C.brand} />
+                      : <FileText size={16} color={C.apply} />}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {doc.title}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.muted }}>
+                      {doc.kind === "diploma" ? "Диплом" : "Сертификат"} · на проверке
+                    </div>
+                  </div>
+                  <button onClick={() => removeDoc(i)} style={{
+                    background: "none", border: "none", cursor: "pointer", color: C.muted,
+                    display: "grid", placeItems: "center", padding: 4, flexShrink: 0,
+                  }}>
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => openPicker("diploma")} style={{
+                flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                padding: "10px 0", borderRadius: 12, cursor: "pointer",
+                border: `1.5px solid ${C.brand}40`, background: `${C.brand}0e`, color: C.brand,
+                fontSize: 13, fontWeight: 700,
+              }}>
+                <GraduationCap size={15} /> Диплом
+              </button>
+              <button onClick={() => openPicker("certificate")} style={{
+                flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                padding: "10px 0", borderRadius: 12, cursor: "pointer",
+                border: `1.5px solid ${C.apply}40`, background: `${C.apply}0e`, color: C.apply,
+                fontSize: 13, fontWeight: 700,
+              }}>
+                <Upload size={15} /> Сертификат
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Блок навыков */}
         <div>
@@ -3098,6 +3271,12 @@ function CardShell({ children }) {
 
 function CardBody({ item, mode, dim, fullscreen, distance }) {
   const Icon = item.icon;
+  const cat = categoryById(item.category);
+  const pay = payParts(item);
+  const reqChips = requirementChips(item.requirements);
+  const noExp = item.requirements?.noExperienceOk;
+  const urgent = item.urgency === "urgent";
+  const tomorrow = item.urgency === "tomorrow";
   const distLabel = distance != null
     ? `${item.district ?? item.city} · ${fmtKm(distance)} · ~${walkMin(distance)} мин пешком`
     : item.city;
@@ -3106,20 +3285,24 @@ function CardBody({ item, mode, dim, fullscreen, distance }) {
     return (
       <div style={{
         position: "absolute", inset: 0, opacity: dim ? 0.45 : 1,
-        background: `linear-gradient(150deg, ${item.photo[0]}, ${item.photo[1]})`,
+        background: item.placePhoto
+          ? `url(${item.placePhoto}) center/cover`
+          : `linear-gradient(150deg, ${item.photo[0]}, ${item.photo[1]})`,
         overflow: "hidden",
       }}>
-        {/* фоновая иконка */}
-        <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", opacity: .25 }}>
-          {mode === "seeker"
-            ? <Icon size={180} color="#fff" strokeWidth={0.8} />
-            : <User size={180} color="#fff" strokeWidth={0.8} />}
-        </div>
+        {/* фоновая иконка места / категории (только если нет реального фото) */}
+        {!item.placePhoto && (
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", opacity: .25 }}>
+            {mode === "seeker"
+              ? <Icon size={180} color="#fff" strokeWidth={0.8} />
+              : <User size={180} color="#fff" strokeWidth={0.8} />}
+          </div>
+        )}
 
         {/* градиент снизу для текста */}
         <div style={{
-          position: "absolute", bottom: 0, left: 0, right: 0, height: "55%",
-          background: "linear-gradient(to top, rgba(10,8,20,.88) 0%, rgba(10,8,20,.4) 60%, transparent 100%)",
+          position: "absolute", bottom: 0, left: 0, right: 0, height: "62%",
+          background: "linear-gradient(to top, rgba(10,8,20,.9) 0%, rgba(10,8,20,.45) 58%, transparent 100%)",
         }} />
 
         {/* галерея-точки */}
@@ -3131,6 +3314,7 @@ function CardBody({ item, mode, dim, fullscreen, distance }) {
             }} />
           ))}
         </div>
+
 
         {/* лого компании + бейдж верификации */}
         {mode === "seeker" && (
@@ -3157,7 +3341,31 @@ function CardBody({ item, mode, dim, fullscreen, distance }) {
         )}
 
         {/* текст внизу карточки */}
-        <div style={{ position: "absolute", bottom: 100, left: 16, right: 16 }}>
+        <div style={{ position: "absolute", bottom: 96, left: 16, right: 16 }}>
+          {/* категория + срочность — над заголовком (только вакансия) */}
+          {mode === "seeker" && (cat || urgent || tomorrow) && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+              {cat && (
+                <span style={{
+                  fontSize: 11.5, fontWeight: 700, color: "#fff",
+                  background: "rgba(0,0,0,.4)", backdropFilter: "blur(6px)",
+                  padding: "4px 11px", borderRadius: 20, border: "1px solid rgba(255,255,255,.2)",
+                }}>
+                  {cat.emoji} {cat.label}
+                </span>
+              )}
+              {urgent && (
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: "#fff", background: "#ED8936", padding: "4px 11px", borderRadius: 20 }}>
+                  ⚡ Срочно
+                </span>
+              )}
+              {tomorrow && (
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: "#fff", background: "#E53E3E", padding: "4px 11px", borderRadius: 20 }}>
+                  🔥 Выйти завтра
+                </span>
+              )}
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <h3 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: -0.4, lineHeight: 1.2 }}>
               {mode === "seeker" ? item.role : item.name}
@@ -3179,60 +3387,110 @@ function CardBody({ item, mode, dim, fullscreen, distance }) {
           <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, color: "rgba(255,255,255,.7)", fontSize: 13, flexWrap: "wrap" }}>
             <MapPin size={13} />
             <span style={{ fontWeight: distance != null ? 700 : 400 }}>{distLabel}</span>
-            {mode === "seeker" && (
-              <span style={{ marginLeft: 10, fontWeight: 800, color: "rgba(255,255,255,.95)", fontSize: 14 }}>
-                {item.salary}
-              </span>
-            )}
             {mode !== "seeker" && (
               <span style={{ marginLeft: 8, color: "rgba(255,255,255,.65)" }}>{item.exp}</span>
             )}
           </div>
-          <p style={{ margin: "8px 0 0", fontSize: 13, lineHeight: 1.45, color: "rgba(255,255,255,.75)" }}>
+
+          {/* ── ВАКАНСИЯ: оплата + условия ── */}
+          {mode === "seeker" && (
+            <>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 7, marginTop: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 24, fontWeight: 900, color: "#fff", letterSpacing: -0.5 }}>
+                  {pay.big}
+                </span>
+                {pay.unit && (
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,.7)" }}>{pay.unit}</span>
+                )}
+              </div>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {item.schedule && (
+                  <span style={{
+                    fontSize: 11.5, fontWeight: 700, color: "#fff",
+                    background: "rgba(255,255,255,.18)", backdropFilter: "blur(4px)",
+                    padding: "4px 10px", borderRadius: 20, border: "1px solid rgba(255,255,255,.22)",
+                  }}>
+                    🕘 {item.schedule}
+                  </span>
+                )}
+                {noExp && (
+                  <span style={{
+                    fontSize: 11.5, fontWeight: 800, color: "#fff",
+                    background: `${C.apply}dd`, padding: "4px 10px", borderRadius: 20,
+                    border: "1px solid rgba(255,255,255,.25)",
+                  }}>
+                    Без опыта
+                  </span>
+                )}
+                {reqChips.map((c) => (
+                  <span key={c} style={{
+                    fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,.85)",
+                    background: "rgba(255,255,255,.1)", backdropFilter: "blur(4px)",
+                    padding: "4px 10px", borderRadius: 20, border: "1px solid rgba(255,255,255,.15)",
+                  }}>{c}</span>
+                ))}
+              </div>
+            </>
+          )}
+
+          <p style={{ margin: "8px 0 0", fontSize: 12.5, lineHeight: 1.4, color: "rgba(255,255,255,.72)",
+            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
             {item.blurb}
           </p>
-          {/* навыки из справочника */}
+
+          {/* навыки */}
           {item.skills?.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
               {item.skills.map((sid) => (
                 <span key={sid} style={{
                   fontSize: 11.5, fontWeight: 700, color: "#fff",
                   background: "rgba(255,255,255,.22)", backdropFilter: "blur(4px)",
-                  padding: "4px 10px", borderRadius: 20,
-                  border: "1px solid rgba(255,255,255,.25)",
+                  padding: "4px 10px", borderRadius: 20, border: "1px solid rgba(255,255,255,.25)",
                 }}>
                   {skillName(sid)}
                 </span>
               ))}
             </div>
           )}
-          {/* доп. теги / дипломы */}
-          {mode === "seeker" && item.tags?.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-              {item.tags.map((t) => (
-                <span key={t} style={{
-                  fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,.7)",
-                  background: "rgba(255,255,255,.1)", backdropFilter: "blur(4px)",
-                  padding: "3px 9px", borderRadius: 20, border: "1px solid rgba(255,255,255,.15)",
-                }}>{t}</span>
-              ))}
-            </div>
-          )}
-          {mode !== "seeker" && item.creds?.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-              {item.creds.map((c, i) => (
-                <span key={c} style={{
-                  fontSize: 11, fontWeight: 600,
-                  color: item.verified && i === 0 ? "#fff" : "rgba(255,255,255,.7)",
-                  background: item.verified && i === 0 ? `${C.apply}55` : "rgba(255,255,255,.1)",
-                  backdropFilter: "blur(4px)",
-                  padding: "3px 9px", borderRadius: 20,
-                  border: `1px solid ${item.verified && i === 0 ? `${C.apply}90` : "rgba(255,255,255,.15)"}`,
-                  display: "flex", alignItems: "center", gap: 5,
-                }}>
-                  <BadgeCheck size={11} color={C.apply} /> {c}
-                </span>
-              ))}
+
+          {/* ── КАНДИДАТ: дипломы и сертификаты (после фото) ── */}
+          {mode !== "seeker" && item.documents?.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{
+                display: "flex", alignItems: "center", gap: 6, marginBottom: 6,
+                fontSize: 11, fontWeight: 800, color: "rgba(255,255,255,.85)",
+                textTransform: "uppercase", letterSpacing: 0.6,
+              }}>
+                <FileText size={12} /> Дипломы и сертификаты
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {item.documents.slice(0, 3).map((doc, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    background: "rgba(255,255,255,.12)", backdropFilter: "blur(6px)",
+                    borderRadius: 10, padding: "7px 10px",
+                    border: `1px solid ${doc.verified ? `${C.apply}80` : "rgba(255,255,255,.18)"}`,
+                  }}>
+                    <div style={{
+                      width: 24, height: 24, borderRadius: 7, flexShrink: 0,
+                      background: doc.kind === "diploma" ? "rgba(108,92,231,.7)" : "rgba(255,255,255,.2)",
+                      display: "grid", placeItems: "center",
+                    }}>
+                      {doc.kind === "diploma" ? <GraduationCap size={13} color="#fff" /> : <FileText size={13} color="#fff" />}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {doc.title}
+                      </div>
+                      <div style={{ fontSize: 10, color: "rgba(255,255,255,.6)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {doc.kind === "diploma" ? "Диплом" : "Сертификат"} · {doc.issuer}
+                      </div>
+                    </div>
+                    {doc.verified && <BadgeCheck size={15} color={C.apply} style={{ flexShrink: 0 }} />}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
