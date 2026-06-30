@@ -288,7 +288,7 @@ const COMPANIES_RAW = [
     company: "Клининг «Чисто и Точка»", logo: "ЧТ", logoBg: "#22B8CF",
     role: "Уборщик-курьер", districtId: "tverskoy", areaId: "moscow",
     category: "services", payType: "shift", payValue: 1800, schedule: "гибкий",
-    employmentType: "oneoff", urgency: "urgent",
+    employmentType: "oneoff", urgency: "urgent", boosted: true,
     requirements: { noExperienceOk: true },
     salary: "от 1800 ₽/смена", salaryFrom: 44000, icon: Wrench,
     photoLabel: "Объект уборки", photo: ["#C2ECF2", "#1098AD"], placePhoto: null,
@@ -341,14 +341,37 @@ const COMPANIES_RAW = [
   },
 ];
 
-// проставляем geo по району (если не задан явно)
+// точные адреса по районам (раскрываются только после мэтча)
+const ADDRESSES = {
+  sokol:       "ул. Алабяна, 12",
+  aeroport:    "Ленинградский пр-т, 62",
+  voykovskaya: "Старопетровский пр-д, 7А",
+  begovaya:    "ул. Поликарпова, 21",
+  presnensky:  "Пресненская наб., 8с1",
+  khamovniki:  "Комсомольский пр-т, 28",
+  tverskoy:    "ул. Тверская, 18",
+  sokolniki:   "ул. Стромынка, 19",
+};
+
+// проставляем geo + точный адрес по району
 const withGeo = (item) => {
-  if (item.geo) return { ...item, city: `${item.geo.district}`, district: item.geo.district };
+  if (item.geo) return {
+    ...item, city: `${item.geo.district}`, district: item.geo.district,
+    address: item.address ?? `${item.geo.district}, точный адрес после мэтча`,
+  };
   const d = districtById(item.districtId);
   return d
-    ? { ...item, geo: { lat: d.lat, lng: d.lng, district: d.name }, city: `Москва · ${d.name}`, district: d.name }
+    ? {
+        ...item,
+        geo: { lat: d.lat, lng: d.lng, district: d.name },
+        city: `Москва · ${d.name}`, district: d.name,
+        address: `Москва, ${ADDRESSES[item.districtId] ?? d.name}`,
+      }
     : item;
 };
+
+// вакансия публикуется только при наличии фото места и одобренной модерации
+const isPublishable = (v) => v.moderation === "approved" && (v.placePhoto || (v.photo && v.photo.length > 0));
 
 const COMPANIES = COMPANIES_RAW.map(withGeo);
 
@@ -412,6 +435,8 @@ function geoDeck(list, home, radiusKey) {
       return it._dist <= r;
     })
     .sort((a, b) => {
+      // проплаченный буст («Срочно») поднимается выше
+      if (!!a.boosted !== !!b.boosted) return a.boosted ? -1 : 1;
       if (a._dist == null) return 1;
       if (b._dist == null) return -1;
       return a._dist - b._dist;
@@ -763,6 +788,7 @@ function MapView({ home, deck, radiusKey, onPick }) {
 
 // карточка-превью вакансии при тапе по маркеру (низ экрана)
 function MapPreview({ item, onClose, onLike }) {
+  const [reported, setReported] = useState(false);
   if (!item) return null;
   const cat = categoryById(item.category);
   const pay = payParts(item);
@@ -810,9 +836,16 @@ function MapPreview({ item, onClose, onLike }) {
           </span>
         </div>
 
-        <p style={{ margin: "8px 0 0", fontSize: 11.5, color: C.muted }}>
-          Точный адрес станет виден после мэтча
-        </p>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "8px 0 0" }}>
+          {item.verified && (
+            <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: C.apply }}>
+              <ShieldCheck size={12} /> Проверенный работодатель
+            </span>
+          )}
+          <span style={{ marginLeft: "auto", fontSize: 11, color: C.muted }}>
+            Точный адрес — после мэтча
+          </span>
+        </div>
 
         <button onClick={() => onLike(item)} style={{
           marginTop: 10, width: "100%", padding: "11px 0", borderRadius: 12, border: "none",
@@ -820,6 +853,15 @@ function MapPreview({ item, onClose, onLike }) {
           display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
         }}>
           <Heart size={16} fill="#fff" strokeWidth={0} /> Откликнуться
+        </button>
+
+        <button onClick={() => setReported(true)} disabled={reported} style={{
+          marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 10,
+          border: "none", background: "none", cursor: reported ? "default" : "pointer",
+          color: reported ? C.apply : C.muted, fontSize: 12, fontWeight: 600,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+        }}>
+          <AlertCircle size={13} /> {reported ? "Жалоба отправлена" : "Пожаловаться"}
         </button>
       </div>
     </div>
@@ -877,7 +919,7 @@ function GuestFeedScreen({ home, onLike, onRegister }) {
     setActiveCats((p) => p.includes(id) ? p.filter((c) => c !== id) : [...p, id]);
   };
 
-  const approved = COMPANIES.filter((c) => c.moderation === "approved");
+  const approved = COMPANIES.filter(isPublishable);
   const rawDeck = categoryDeck(geoDeck(approved, home, radius), activeCats, null);
   const current = rawDeck[si];
   const next = rawDeck[si + 1];
@@ -1681,6 +1723,10 @@ function createNegotiation(role, item) {
     displayRole: role === "seeker" ? item.role    : item.role,
     avatarBg:   role === "seeker" ? item.logoBg  : item.photo[1],
     avatarLabel:role === "seeker" ? item.logo     : item.name?.[0] ?? "?",
+    // данные вакансии для раскрытия после мэтча (приватность L4)
+    employerVerified: role === "seeker" ? !!item.verified : false,
+    vacancyDistrict:  role === "seeker" ? item.district : null,
+    vacancyAddress:   role === "seeker" ? item.address : null,
     state: "matched",
     unread: 0,
     lastMessageAt: now(),
@@ -1699,23 +1745,40 @@ function MainApp({ role, user, home, onLogout, isDark, onToggleTheme, initialLik
   const [userSkills, setUserSkills] = useState(user?.skills ?? []);
   const [userCats, setUserCats] = useState(user?.interestedCategories ?? []);
   const [userAvail, setUserAvail] = useState(user?.availability ?? []);
+  const [ageGate, setAgeGate] = useState(null); // вакансия, ждущая подтверждения 18+
+  const age18Ref = useRef(
+    (user?.age != null && user.age >= 18) || localStorage.getItem("swipr_age18") === "1"
+  );
+
+  const performLike = (item) => {
+    const neg = createNegotiation(mode, item);
+    setNegotiations((prev) => [neg, ...prev]);
+    setMatchModal(neg);
+  };
 
   // process a like that happened before registration
   useEffect(() => {
-    if (initialLike) {
-      const neg = createNegotiation(mode, initialLike);
-      setNegotiations([neg]);
-      setMatchModal(neg);
-    }
+    if (initialLike) performLike(initialLike);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const navCount = negotiations.reduce((s, n) => s + (n.hidden ? 0 : n.unread), 0);
 
   const handleLike = (item) => {
-    const neg = createNegotiation(mode, item);
-    setNegotiations((prev) => [neg, ...prev]);
-    setMatchModal(neg);
+    // 18+ гейт там, где требуется
+    if (mode === "seeker" && item.requirements?.age18 && !age18Ref.current) {
+      setAgeGate(item);
+      return;
+    }
+    performLike(item);
+  };
+
+  const confirmAge18 = () => {
+    age18Ref.current = true;
+    localStorage.setItem("swipr_age18", "1");
+    const it = ageGate;
+    setAgeGate(null);
+    if (it) performLike(it);
   };
 
   const closeMatch = () => setMatchModal(null);
@@ -1826,6 +1889,48 @@ function MainApp({ role, user, home, onLogout, isDark, onToggleTheme, initialLik
       {matchModal && (
         <MatchModal neg={matchModal} role={mode} onClose={closeMatch} onChat={openChat} />
       )}
+
+      {/* 18+ гейт */}
+      {ageGate && (
+        <AgeGateModal item={ageGate} onConfirm={confirmAge18} onCancel={() => setAgeGate(null)} />
+      )}
+    </div>
+  );
+}
+
+// ─── 18+ гейт ─────────────────────────────────────────────────────────────────
+function AgeGateModal({ item, onConfirm, onCancel }) {
+  return (
+    <div style={{
+      position: "absolute", inset: 0, zIndex: 110,
+      background: "rgba(10,8,20,.7)", backdropFilter: "blur(6px)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 28,
+    }}>
+      <div style={{
+        background: C.card, borderRadius: 20, padding: "26px 22px", width: "100%", textAlign: "center",
+        boxShadow: "0 20px 60px rgba(0,0,0,.4)",
+      }}>
+        <div style={{ width: 60, height: 60, borderRadius: 18, background: "#FFF3E0", display: "grid", placeItems: "center", margin: "0 auto 16px" }}>
+          <AlertCircle size={30} color="#ED8936" />
+        </div>
+        <h3 style={{ margin: "0 0 8px", fontSize: 19, fontWeight: 800, color: C.ink }}>Только для 18+</h3>
+        <p style={{ margin: "0 0 22px", fontSize: 13.5, color: C.muted, lineHeight: 1.5 }}>
+          Для вакансии «{item.role}» требуется возраст 18 лет и старше. Подтвердите, что вам уже есть 18.
+        </p>
+        <button onClick={onConfirm} style={{
+          width: "100%", padding: "13px 0", borderRadius: 13, border: "none",
+          background: C.apply, color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer", marginBottom: 10,
+        }}>
+          Мне есть 18 лет
+        </button>
+        <button onClick={onCancel} style={{
+          width: "100%", padding: "12px 0", borderRadius: 13,
+          border: `1.5px solid ${C.line}`, background: "transparent",
+          color: C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer",
+        }}>
+          Отмена
+        </button>
+      </div>
     </div>
   );
 }
@@ -2064,6 +2169,8 @@ function FilterSheet({ open, onClose, filters, onChange, mode }) {
 
 function applyFilters(deck, filters, mode) {
   return deck.filter((item) => {
+    // вакансия без фото места / не одобренная — не публикуется
+    if (mode === "seeker" && !isPublishable(item)) return false;
     if (item.moderation && item.moderation !== "approved") return false;
     if (filters.city && item.areaId !== filters.city) return false;
     if (mode === "seeker" && filters.salaryMin && (item.salaryFrom ?? 0) < filters.salaryMin) return false;
@@ -2551,6 +2658,31 @@ function ChatScreen({ neg, role, onBack, onSend, onInterview, onInterviewRespons
           )}
         </div>
       </div>
+
+      {/* Раскрытый адрес после мэтча (приватность L4) — только соискателю */}
+      {role === "seeker" && neg.vacancyAddress && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10, padding: "10px 16px",
+          background: `${C.apply}0e`, borderBottom: `1px solid ${C.line}`, flexShrink: 0,
+        }}>
+          <div style={{ width: 30, height: 30, borderRadius: 9, background: `${C.apply}1a`, display: "grid", placeItems: "center", flexShrink: 0 }}>
+            <MapPin size={15} color={C.apply} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {neg.vacancyAddress}
+            </div>
+            <div style={{ fontSize: 11, color: C.apply, fontWeight: 600 }}>
+              Точный адрес открыт после мэтча
+            </div>
+          </div>
+          {neg.employerVerified && (
+            <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: C.apply, background: `${C.apply}14`, padding: "3px 8px", borderRadius: 20, flexShrink: 0 }}>
+              <ShieldCheck size={12} /> Проверен
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Лента сообщений */}
       <div style={{
@@ -3460,6 +3592,57 @@ function ProfileScreen({ user, role, userSkills, onSkillsChange, userCats, onCat
           </div>
         )}
 
+        {/* ── Монетизация нанимателя (заглушки) ── */}
+        {!isSeeker && (
+          <div>
+            <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 800, color: C.ink }}>Тариф и продвижение</h3>
+            <p style={{ margin: "0 0 12px", fontSize: 12.5, color: C.muted }}>
+              1 активная вакансия — бесплатно. Больше слотов и продвижение — платно.
+            </p>
+
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10, padding: "12px 14px",
+              borderRadius: 12, border: `1.5px solid ${C.line}`, background: C.card, marginBottom: 10,
+            }}>
+              <div style={{ width: 32, height: 32, borderRadius: 9, background: `${C.apply}18`, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                <CheckCircle2 size={16} color={C.apply} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Бесплатный тариф</div>
+                <div style={{ fontSize: 11.5, color: C.muted }}>1 активная вакансия · базовый показ</div>
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.apply, background: `${C.apply}14`, padding: "3px 9px", borderRadius: 20 }}>
+                Активен
+              </span>
+            </div>
+
+            <div style={{
+              background: `linear-gradient(135deg, ${C.brand}, #9B59B6)`,
+              borderRadius: 14, padding: "16px 16px", color: "#fff",
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 700, opacity: 0.85, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+                Продвижение
+              </div>
+              {[
+                { t: "🚀 Буст «Срочно» — в топ ленты рядом", p: "от 299 ₽" },
+                { t: "➕ Доп. слоты вакансий", p: "199 ₽/мес" },
+                { t: "📍 Расширенный радиус показа", p: "149 ₽/мес" },
+              ].map((o) => (
+                <div key={o.t} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderTop: "1px solid rgba(255,255,255,.18)" }}>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{o.t}</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 800 }}>{o.p}</span>
+                </div>
+              ))}
+              <button style={{
+                marginTop: 12, width: "100%", padding: "11px 0", borderRadius: 11, border: "none",
+                background: "#fff", color: C.brand, fontSize: 14, fontWeight: 800, cursor: "pointer",
+              }}>
+                Подключить продвижение
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Оформление */}
         <div>
           <h3 style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 800, color: C.ink }}>Оформление</h3>
@@ -3583,9 +3766,18 @@ function CardBody({ item, mode, dim, fullscreen, distance }) {
 
         {/* текст внизу карточки */}
         <div style={{ position: "absolute", bottom: 96, left: 16, right: 16 }}>
-          {/* категория + срочность — над заголовком (только вакансия) */}
-          {mode === "seeker" && (cat || urgent || tomorrow) && (
+          {/* категория + срочность + буст — над заголовком (только вакансия) */}
+          {mode === "seeker" && (cat || urgent || tomorrow || item.boosted) && (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+              {item.boosted && (
+                <span style={{
+                  fontSize: 11.5, fontWeight: 800, color: "#fff",
+                  background: `linear-gradient(135deg, ${C.brand}, #9B59B6)`,
+                  padding: "4px 11px", borderRadius: 20,
+                }}>
+                  🚀 В топе
+                </span>
+              )}
               {cat && (
                 <span style={{
                   fontSize: 11.5, fontWeight: 700, color: "#fff",
