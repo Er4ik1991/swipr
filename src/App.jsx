@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
+import { MapContainer, TileLayer, CircleMarker, Circle, Tooltip, useMap } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 import {
   Heart, X, MapPin, GraduationCap, BadgeCheck, Building2,
   Sparkles, Coffee, Wrench, Briefcase, RotateCcw, User, Star,
@@ -702,6 +704,154 @@ function categoryDeck(deck, activeCats, interestedCats) {
   return out;
 }
 
+// ─── Карта (L1+) ──────────────────────────────────────────────────────────────
+// приблизительная точка вакансии (до мэтча) — детерминированный сдвиг ~300–400 м
+function jitterLatLng(seed, base, amp = 0.0035) {
+  let h = 0;
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const da = (((h % 1000) / 1000) - 0.5) * 2 * amp;
+  const db = ((((h >> 10) % 1000) / 1000) - 0.5) * 2 * amp;
+  return [base.lat + da, base.lng + db];
+}
+const approxLatLng = (item) => jitterLatLng((item.company ?? "") + (item.role ?? ""), item.geo);
+
+const radiusZoom = (key) => (key === "city" ? 11 : key === "min30" ? 13 : 14);
+
+// контроллер вида карты — реагирует на смену дома/радиуса
+function MapController({ center, zoom }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center) map.setView(center, zoom, { animate: true });
+  }, [center[0], center[1], zoom]); // eslint-disable-line
+  return null;
+}
+
+function MapView({ home, deck, radiusKey, onPick }) {
+  const center = home ? [home.lat, home.lng] : [55.805, 37.515];
+  const rMeters = radiusKm(radiusKey) * 1000;
+  const showCircle = home && isFinite(rMeters);
+  return (
+    <MapContainer
+      center={center} zoom={radiusZoom(radiusKey)}
+      style={{ position: "absolute", inset: 0, zIndex: 1 }}
+      zoomControl={false} attributionControl={false}
+    >
+      <MapController center={center} zoom={radiusZoom(radiusKey)} />
+      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      {showCircle && (
+        <Circle center={center} radius={rMeters}
+          pathOptions={{ color: C.brand, fillColor: C.brand, fillOpacity: 0.08, weight: 1.5 }} />
+      )}
+      {home && (
+        <CircleMarker center={center} radius={8}
+          pathOptions={{ color: "#fff", fillColor: C.brand, fillOpacity: 1, weight: 3 }}>
+          <Tooltip direction="top">Вы здесь · {home.district}</Tooltip>
+        </CircleMarker>
+      )}
+      {deck.map((it, i) => (
+        <CircleMarker key={i} center={approxLatLng(it)} radius={10}
+          pathOptions={{ color: "#fff", fillColor: C.apply, fillOpacity: 0.95, weight: 2 }}
+          eventHandlers={{ click: () => onPick(it) }}>
+          <Tooltip direction="top">
+            {it.role} · {it._dist != null ? fmtKm(it._dist) : it.district}
+          </Tooltip>
+        </CircleMarker>
+      ))}
+    </MapContainer>
+  );
+}
+
+// карточка-превью вакансии при тапе по маркеру (низ экрана)
+function MapPreview({ item, onClose, onLike }) {
+  if (!item) return null;
+  const cat = categoryById(item.category);
+  const pay = payParts(item);
+  return (
+    <div style={{ position: "absolute", left: 12, right: 12, bottom: 86, zIndex: 20 }}>
+      <div style={{
+        background: C.card, borderRadius: 18, padding: "14px 14px 12px",
+        boxShadow: "0 10px 40px rgba(0,0,0,.25)", border: `1px solid ${C.line}`,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{
+            width: 46, height: 46, borderRadius: 12, flexShrink: 0,
+            background: item.logoBg, color: "#fff", display: "grid", placeItems: "center",
+            fontWeight: 800, fontSize: 15,
+          }}>
+            {item.logo}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {item.role}
+            </div>
+            <div style={{ fontSize: 12.5, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {item.company}
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            background: "none", border: "none", cursor: "pointer", color: C.muted,
+            display: "grid", placeItems: "center", padding: 4, flexShrink: 0,
+          }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+          {cat && (
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: cat.color, background: `${cat.color}14`, padding: "3px 9px", borderRadius: 20 }}>
+              {cat.emoji} {cat.label}
+            </span>
+          )}
+          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: C.muted }}>
+            <MapPin size={12} /> {item.district}{item._dist != null ? ` · ${fmtKm(item._dist)}` : ""}
+          </span>
+          <span style={{ marginLeft: "auto", fontSize: 16, fontWeight: 900, color: C.ink }}>
+            {pay.big}{pay.unit ? <span style={{ fontSize: 11, fontWeight: 600, color: C.muted }}> {pay.unit}</span> : null}
+          </span>
+        </div>
+
+        <p style={{ margin: "8px 0 0", fontSize: 11.5, color: C.muted }}>
+          Точный адрес станет виден после мэтча
+        </p>
+
+        <button onClick={() => onLike(item)} style={{
+          marginTop: 10, width: "100%", padding: "11px 0", borderRadius: 12, border: "none",
+          background: C.apply, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+        }}>
+          <Heart size={16} fill="#fff" strokeWidth={0} /> Откликнуться
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// переключатель «Список ⇄ Карта»
+function ViewToggle({ value, onChange }) {
+  return (
+    <div style={{ display: "flex", background: C.line, borderRadius: 10, padding: 2 }}>
+      {[
+        { key: "list", label: "Список", Icon: Layers },
+        { key: "map",  label: "Карта",  Icon: MapPin },
+      ].map(({ key, label, Icon }) => {
+        const on = value === key;
+        return (
+          <button key={key} onClick={() => onChange(key)} style={{
+            display: "flex", alignItems: "center", gap: 5,
+            padding: "5px 11px", borderRadius: 8, border: "none", cursor: "pointer",
+            fontSize: 12, fontWeight: 700,
+            background: on ? C.card : "transparent",
+            color: on ? C.ink : C.muted,
+            boxShadow: on ? "0 1px 4px rgba(0,0,0,.12)" : "none",
+          }}>
+            <Icon size={13} /> {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 const GUEST_SWIPE_LIMIT = 25;
 const guestKey = () => `swipr_guest_${new Date().toISOString().slice(0, 10)}`;
 
@@ -712,6 +862,8 @@ function GuestFeedScreen({ home, onLike, onRegister }) {
   const [exit, setExit] = useState(null);
   const [radius, setRadius] = useState("nearby");
   const [activeCats, setActiveCats] = useState([]);
+  const [view, setView] = useState("list");
+  const [mapPick, setMapPick] = useState(null);
   const [guestSwipes, setGuestSwipes] = useState(() => {
     try {
       const s = JSON.parse(localStorage.getItem(guestKey()) || "{}");
@@ -815,16 +967,21 @@ function GuestFeedScreen({ home, onLike, onRegister }) {
           }}>Войти</button>
         </div>
 
-        {/* Гео-строка: район дома + кол-во рядом */}
-        {home && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, pointerEvents: "auto" }}>
-            <MapPin size={13} color={C.brand} />
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>{home.district}</span>
-            <span style={{ fontSize: 12.5, color: C.muted }}>
-              · {rawDeck.length} {rawDeck.length === 1 ? "вакансия" : "вакансий"} рядом
-            </span>
+        {/* Гео-строка: район дома + кол-во рядом + переключатель вида */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, pointerEvents: "auto" }}>
+          {home && (
+            <>
+              <MapPin size={13} color={C.brand} />
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>{home.district}</span>
+              <span style={{ fontSize: 12.5, color: C.muted }}>
+                · {rawDeck.length} {rawDeck.length === 1 ? "вакансия" : "вакансий"} рядом
+              </span>
+            </>
+          )}
+          <div style={{ marginLeft: "auto" }}>
+            <ViewToggle value={view} onChange={setView} />
           </div>
-        )}
+        </div>
 
         {/* Селектор радиуса */}
         <div style={{ pointerEvents: "auto", marginTop: 8 }}>
@@ -837,7 +994,16 @@ function GuestFeedScreen({ home, onLike, onRegister }) {
         </div>
       </div>
 
-      {/* Колода */}
+      {/* ── Карта ── */}
+      {view === "map" && (
+        <>
+          <MapView home={home} deck={rawDeck} radiusKey={radius} onPick={setMapPick} />
+          <MapPreview item={mapPick} onClose={() => setMapPick(null)} onLike={(it) => { setMapPick(null); onLike(it); }} />
+        </>
+      )}
+
+      {/* Колода (только режим списка) */}
+      {view === "list" && (
       <div style={{ position: "absolute", inset: 0, paddingTop: 0 }}>
         {(!current || si >= rawDeck.length) ? (
           <div style={{
@@ -895,9 +1061,10 @@ function GuestFeedScreen({ home, onLike, onRegister }) {
           </>
         )}
       </div>
+      )}
 
       {/* Кнопки */}
-      {current && si < rawDeck.length && (
+      {view === "list" && current && si < rawDeck.length && (
         <div style={{
           position: "absolute", bottom: 24, left: 0, right: 0, zIndex: 10,
           display: "flex", justifyContent: "center", alignItems: "center", gap: 22,
@@ -920,7 +1087,7 @@ function GuestFeedScreen({ home, onLike, onRegister }) {
       <div style={{
         position: "absolute", bottom: 102, left: 16, right: 16, zIndex: 10,
         background: `${C.brand}ee`, borderRadius: 14, padding: "10px 16px",
-        display: "flex", alignItems: "center", gap: 10,
+        display: view === "list" ? "flex" : "none", alignItems: "center", gap: 10,
         boxShadow: "0 4px 20px rgba(108,92,231,.3)",
         pointerEvents: "none",
         opacity: guestSwipes === 0 ? 1 : 0,
@@ -1915,6 +2082,8 @@ function FeedTab({ mode, user, home, onLogout, onLike, userSkills, userCats }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [radius, setRadius] = useState("nearby");
   const [activeCats, setActiveCats] = useState([]);
+  const [view, setView] = useState("list");
+  const [mapPick, setMapPick] = useState(null);
   const [filters, setFilters] = useState({ city: null, salaryMin: null, expMin: null });
 
   const toggleCat = (id) => {
@@ -2055,6 +2224,9 @@ function FeedTab({ mode, user, home, onLogout, onLike, userSkills, userCats }) {
               <span style={{ fontSize: 12.5, color: C.muted }}>
                 · {deck.length} {deck.length === 1 ? "вакансия" : "вакансий"} рядом
               </span>
+              <div style={{ marginLeft: "auto" }}>
+                <ViewToggle value={view} onChange={setView} />
+              </div>
             </div>
             <div style={{ pointerEvents: "auto", marginTop: 8 }}>
               <RadiusSelector value={radius} onChange={(v) => { setRadius(v); setIdx(0); }} />
@@ -2066,7 +2238,17 @@ function FeedTab({ mode, user, home, onLogout, onLike, userSkills, userCats }) {
         )}
       </div>
 
+      {/* ── Карта (только соискатель) ── */}
+      {useGeo && view === "map" && (
+        <>
+          <MapView home={home} deck={deck} radiusKey={radius} onPick={setMapPick} />
+          <MapPreview item={mapPick} onClose={() => setMapPick(null)}
+            onLike={(it) => { setMapPick(null); if (!limitReached) { onLike(it); saveSwipes(swipesUsed + 1); } }} />
+        </>
+      )}
+
       {/* Колода карточек — на весь экран */}
+      {!(useGeo && view === "map") && (
       <div style={{ position: "absolute", inset: 0 }}>
         {!current ? (
           (useGeo && deck.length === 0 && radius !== "city") ? (
@@ -2098,9 +2280,10 @@ function FeedTab({ mode, user, home, onLogout, onLike, userSkills, userCats }) {
           </>
         )}
       </div>
+      )}
 
       {/* Кнопки действий поверх карточки */}
-      {current && (
+      {!(useGeo && view === "map") && current && (
         <div style={{
           position: "absolute", bottom: 24, left: 0, right: 0, zIndex: 10,
           display: "flex", justifyContent: "center", alignItems: "center", gap: 22,
