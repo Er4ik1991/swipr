@@ -5,7 +5,7 @@ import {
   ChevronLeft, ArrowRight, Mail, Lock, Phone, Eye, EyeOff, CheckCircle2,
   Layers, MessageCircle, Send, Paperclip, MoreVertical,
   Video, Building, PhoneCall, Calendar, Link, ExternalLink,
-  SlidersHorizontal, Zap,
+  SlidersHorizontal, Zap, ShieldCheck, Clock, AlertCircle,
 } from "lucide-react";
 
 const C = {
@@ -56,6 +56,7 @@ const COMPANIES = [
     blurb: "Уютный салон, своё кресло и витрина гель-лаков. График 2/2, чай и печеньки за счёт салона.",
     tags: ["Своё кресло", "График 2/2", "Премии за отзывы"],
     skills: ["manicure", "gel", "nail_design"],
+    moderation: "approved", verified: true,
   },
   {
     company: "Кофейня «Пар»", logo: "ПР", logoBg: "#C08457",
@@ -65,6 +66,7 @@ const COMPANIES = [
     blurb: "Specialty-кофейня у канала. Обучим латте-арту, кофе для бариста — бесплатно и без лимита.",
     tags: ["Чаевые", "Гибкий график", "Обучение"],
     skills: ["barista", "latte_art", "specialty"],
+    moderation: "pending", verified: false,
   },
   {
     company: "IT-студия «Контур»", logo: "К", logoBg: "#5B8DEF",
@@ -74,6 +76,7 @@ const COMPANIES = [
     blurb: "Светлый open-space на 23 этаже, кухня с панорамой, ДМС с первого дня.",
     tags: ["ДМС", "5/2", "Удалёнка по пятницам"],
     skills: ["office_mgmt", "doc_flow", "english_b2", "1c"],
+    moderation: "approved", verified: true,
   },
   {
     company: "Автосервис «Гараж 24»", logo: "Г24", logoBg: "#3FB28B",
@@ -83,6 +86,7 @@ const COMPANIES = [
     blurb: "4 поста, современный инструмент и подъёмники. Сдельная оплата + оклад.",
     tags: ["Сдельно+оклад", "Новый инструмент", "Парковка"],
     skills: ["mechanic", "diagnostics"],
+    moderation: "rejected", verified: false,
   },
 ];
 
@@ -93,6 +97,7 @@ const CANDIDATES = [
     blurb: "Аппаратный и комбинированный маникюр, дизайн. Своя база клиентов.",
     creds: ["Сертификат: аппаратный маникюр", "Курс «Дизайн ногтей 2.0»", "Диплом колледжа"],
     skills: ["manicure", "gel", "nail_design"],
+    moderation: "approved", verified: true,
   },
   {
     name: "Игорь П.", role: "Офис-менеджер", city: "Москва", areaId: "moscow",
@@ -100,6 +105,7 @@ const CANDIDATES = [
     blurb: "Документооборот, закупки, travel-поддержка руководителя. Английский B2.",
     creds: ["1С: Документооборот", "Курс делопроизводства", "Английский B2"],
     skills: ["office_mgmt", "doc_flow", "english_b2", "1c"],
+    moderation: "approved", verified: false,
   },
   {
     name: "Марина С.", role: "Бариста", city: "Санкт-Петербург", areaId: "spb",
@@ -107,6 +113,7 @@ const CANDIDATES = [
     blurb: "Specialty-кофе, латте-арт, работа на потоке. Открывала точку с нуля.",
     creds: ["SCA Barista Skills (Foundation)", "Курс по альтернативе", "Санкнижка"],
     skills: ["barista", "latte_art", "specialty"],
+    moderation: "pending", verified: true,
   },
 ];
 
@@ -868,6 +875,7 @@ function FilterSheet({ open, onClose, filters, onChange, mode }) {
 
 function applyFilters(deck, filters, mode) {
   return deck.filter((item) => {
+    if (item.moderation && item.moderation !== "approved") return false;
     if (filters.city && item.areaId !== filters.city) return false;
     if (mode === "seeker" && filters.salaryMin && (item.salaryFrom ?? 0) < filters.salaryMin) return false;
     if (mode !== "seeker" && filters.expMin && (item.expYears ?? 0) < filters.expMin) return false;
@@ -1934,6 +1942,26 @@ function ChatsPlaceholder({ negotiations = [], onOpenChat }) {
   );
 }
 
+// ─── Moderation badge ─────────────────────────────────────────────────────────
+function ModerationBadge({ status }) {
+  const cfg = {
+    approved: { label: "Одобрено", color: C.apply,   bg: `${C.apply}14`,   Icon: ShieldCheck },
+    pending:  { label: "На проверке", color: "#ED8936", bg: "#FFF3E0",       Icon: Clock },
+    rejected: { label: "Отклонено", color: C.err,    bg: `${C.err}14`,     Icon: AlertCircle },
+  }[status] ?? null;
+  if (!cfg) return null;
+  const { label, color, bg, Icon } = cfg;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      fontSize: 11, fontWeight: 700, color, background: bg,
+      padding: "3px 9px", borderRadius: 20,
+    }}>
+      <Icon size={11} strokeWidth={2.5} /> {label}
+    </span>
+  );
+}
+
 // ─── Profile screen ───────────────────────────────────────────────────────────
 function ProfileScreen({ user, role, userSkills, onSkillsChange }) {
   const isSeeker = role === "seeker";
@@ -1971,13 +1999,16 @@ function ProfileScreen({ user, role, userSkills, onSkillsChange }) {
           </div>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>{user?.login}</div>
-            <span style={{
-              fontSize: 12, fontWeight: 700, color: roleColor,
-              background: `${roleColor}14`, padding: "3px 10px", borderRadius: 20,
-              display: "inline-block", marginTop: 4,
-            }}>
-              {isSeeker ? "Соискатель" : "Наниматель"}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+              <span style={{
+                fontSize: 12, fontWeight: 700, color: roleColor,
+                background: `${roleColor}14`, padding: "3px 10px", borderRadius: 20,
+              }}>
+                {isSeeker ? "Соискатель" : "Наниматель"}
+              </span>
+              {/* Статус модерации анкеты */}
+              <ModerationBadge status="approved" />
+            </div>
           </div>
         </div>
       </div>
@@ -2136,21 +2167,47 @@ function CardBody({ item, mode, dim, fullscreen }) {
           ))}
         </div>
 
-        {/* лого компании */}
+        {/* лого компании + бейдж верификации */}
         {mode === "seeker" && (
-          <div style={{
-            position: "absolute", right: 16, bottom: 148, width: 50, height: 50, borderRadius: 13,
-            background: item.logoBg, color: "#fff", display: "grid", placeItems: "center",
-            fontWeight: 800, fontSize: 15, border: "2.5px solid rgba(255,255,255,.5)",
-            boxShadow: "0 4px 14px rgba(0,0,0,.35)",
-          }}>{item.logo}</div>
+          <div style={{ position: "absolute", right: 16, bottom: 148 }}>
+            <div style={{
+              width: 50, height: 50, borderRadius: 13,
+              background: item.logoBg, color: "#fff", display: "grid", placeItems: "center",
+              fontWeight: 800, fontSize: 15, border: "2.5px solid rgba(255,255,255,.5)",
+              boxShadow: "0 4px 14px rgba(0,0,0,.35)", position: "relative",
+            }}>
+              {item.logo}
+              {item.verified && (
+                <div style={{
+                  position: "absolute", bottom: -6, right: -6,
+                  width: 20, height: 20, borderRadius: "50%",
+                  background: C.apply, border: "2px solid #fff",
+                  display: "grid", placeItems: "center",
+                }}>
+                  <ShieldCheck size={11} color="#fff" strokeWidth={2.5} />
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {/* текст внизу карточки */}
         <div style={{ position: "absolute", bottom: 100, left: 16, right: 16 }}>
-          <h3 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: -0.4, lineHeight: 1.2 }}>
-            {mode === "seeker" ? item.role : item.name}
-          </h3>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <h3 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: -0.4, lineHeight: 1.2 }}>
+              {mode === "seeker" ? item.role : item.name}
+            </h3>
+            {item.verified && mode !== "seeker" && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 4,
+                background: `${C.apply}cc`, borderRadius: 20, padding: "3px 9px",
+                border: "1px solid rgba(255,255,255,.3)",
+              }}>
+                <ShieldCheck size={12} color="#fff" />
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#fff" }}>Проверен</span>
+              </div>
+            )}
+          </div>
           <p style={{ margin: "4px 0 0", fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,.75)" }}>
             {mode === "seeker" ? item.company : item.role}
           </p>
@@ -2197,11 +2254,14 @@ function CardBody({ item, mode, dim, fullscreen }) {
           )}
           {mode !== "seeker" && item.creds?.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-              {item.creds.map((c) => (
+              {item.creds.map((c, i) => (
                 <span key={c} style={{
-                  fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,.7)",
-                  background: "rgba(255,255,255,.1)", backdropFilter: "blur(4px)",
-                  padding: "3px 9px", borderRadius: 20, border: "1px solid rgba(255,255,255,.15)",
+                  fontSize: 11, fontWeight: 600,
+                  color: item.verified && i === 0 ? "#fff" : "rgba(255,255,255,.7)",
+                  background: item.verified && i === 0 ? `${C.apply}55` : "rgba(255,255,255,.1)",
+                  backdropFilter: "blur(4px)",
+                  padding: "3px 9px", borderRadius: 20,
+                  border: `1px solid ${item.verified && i === 0 ? `${C.apply}90` : "rgba(255,255,255,.15)"}`,
                   display: "flex", alignItems: "center", gap: 5,
                 }}>
                   <BadgeCheck size={11} color={C.apply} /> {c}
