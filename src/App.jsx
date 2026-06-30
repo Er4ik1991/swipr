@@ -8,18 +8,47 @@ import {
   SlidersHorizontal, Zap, ShieldCheck, Clock, AlertCircle,
 } from "lucide-react";
 
-const C = {
-  paper: "#FBFAF7",
-  ink: "#16141C",
-  muted: "#6F6A7A",
-  line: "#ECE8E1",
-  apply: "#13B17C",
-  applyDark: "#0E8E63",
-  skip: "#8A8F99",
-  brand: "#6C5CE7",
-  shell: "#101018",
-  err: "#E53E3E",
+// ─── Design tokens ────────────────────────────────────────────────────────────
+// Шаг отступов: 4px (sp1=4, sp2=8, sp3=12, sp4=16, sp6=24, sp8=32)
+// Радиусы: r-sm=8, r-md=12, r-lg=16, r-xl=20, r-full=9999
+const C_LIGHT = {
+  paper:    "#FBFAF7",
+  ink:      "#16141C",
+  muted:    "#6F6A7A",
+  line:     "#ECE8E1",
+  apply:    "#13B17C",
+  applyDark:"#0E8E63",
+  skip:     "#8A8F99",
+  brand:    "#6C5CE7",
+  shell:    "#101018",
+  err:      "#E53E3E",
+  card:     "#FFFFFF",
+  nav:      "#FFFFFF",
 };
+
+const C_DARK = {
+  paper:    "#0F0E15",
+  ink:      "#EEEAF8",
+  muted:    "#9590A4",
+  line:     "#252232",
+  apply:    "#16CF8C",
+  applyDark:"#13B17C",
+  skip:     "#6B7080",
+  brand:    "#8B7FF5",
+  shell:    "#040310",
+  err:      "#FC7171",
+  card:     "#1C1929",
+  nav:      "#151320",
+};
+
+// Мутируемый объект токенов — все компоненты читают из него напрямую
+const C = { ...C_LIGHT };
+
+function applyTheme(tokens) {
+  Object.assign(C, tokens);
+  const root = document.documentElement;
+  Object.entries(tokens).forEach(([k, v]) => root.style.setProperty(`--c-${k}`, v));
+}
 
 // ─── Справочники (Dictionary) ─────────────────────────────────────────────────
 const DICT_SKILLS = [
@@ -133,10 +162,18 @@ const validPhone = (v) => /^\+?[\d\s\-()]{7,15}$/.test(v);
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  // screen: 'pick' | 'register' | 'app'
   const [screen, setScreen] = useState("pick");
   const [role, setRole] = useState(null);
   const [user, setUser] = useState(null);
+  const [isDark, setIsDark] = useState(false);
+  const [, forceUpdate] = useState(0);
+
+  const toggleTheme = () => {
+    const next = !isDark;
+    setIsDark(next);
+    applyTheme(next ? C_DARK : C_LIGHT);
+    forceUpdate((n) => n + 1);
+  };
 
   const handleRolePick = (r) => { setRole(r); setScreen("register"); };
   const handleRegistered = (u) => { setUser(u); setScreen("app"); };
@@ -146,18 +183,20 @@ export default function App() {
   return (
     <div style={{
       minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-      background: "radial-gradient(120% 120% at 50% 0%, #1c1b29 0%, #0c0c12 60%)",
+      background: isDark
+        ? "radial-gradient(120% 120% at 50% 0%, #0a0915 0%, #04030a 60%)"
+        : "radial-gradient(120% 120% at 50% 0%, #1c1b29 0%, #0c0c12 60%)",
       padding: "24px 12px", fontFamily: "'Inter','Segoe UI',system-ui,sans-serif",
     }}>
       <div style={{
         width: 392, maxWidth: "100%", height: 760, background: C.paper,
         borderRadius: 40, overflow: "hidden", position: "relative",
         boxShadow: "0 30px 80px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.04)",
-        border: "10px solid #0a0a10", display: "flex", flexDirection: "column",
+        border: `10px solid ${C.shell}`, display: "flex", flexDirection: "column",
       }}>
         {screen === "pick" && <div style={{ flex: 1, overflow: "hidden" }}><RolePick onPick={handleRolePick} /></div>}
         {screen === "register" && <div style={{ flex: 1, overflowY: "auto" }}><RegisterScreen role={role} onBack={handleBack} onDone={handleRegistered} /></div>}
-        {screen === "app" && <MainApp role={role} user={user} onLogout={handleLogout} />}
+        {screen === "app" && <MainApp role={role} user={user} onLogout={handleLogout} isDark={isDark} onToggleTheme={toggleTheme} />}
       </div>
     </div>
   );
@@ -516,7 +555,7 @@ function createNegotiation(role, item) {
 }
 
 // ─── MainApp ──────────────────────────────────────────────────────────────────
-function MainApp({ role, user, onLogout }) {
+function MainApp({ role, user, onLogout, isDark, onToggleTheme }) {
   const mode = role;
   const [tab, setTab] = useState("feed");
   const [negotiations, setNegotiations] = useState([]);
@@ -626,6 +665,7 @@ function MainApp({ role, user, onLogout }) {
           <ProfileScreen
             user={user} role={role}
             userSkills={userSkills} onSkillsChange={setUserSkills}
+            isDark={isDark} onToggleTheme={onToggleTheme}
           />
         )}
       </div>
@@ -705,7 +745,7 @@ function TabBar({ active, onTab, navCount }) {
     <div style={{
       height: TAB_H, flexShrink: 0,
       display: "flex", alignItems: "stretch",
-      borderTop: `1px solid ${C.line}`, background: "#fff",
+      borderTop: `1px solid ${C.line}`, background: C.nav,
     }}>
       {TABS.map(({ key, label, Icon }) => {
         const isActive = active === key;
@@ -1143,13 +1183,13 @@ const STATE_LABEL = {
   hidden:            null,
 };
 
-const STATE_COLOR = {
+const stateColor = () => ({
   talking:           C.brand,
   interview_invited: "#ED8936",
   interview_set:     C.apply,
   offer:             "#9B59B6",
   rejected:          C.muted,
-};
+});
 
 // ─── Chat screen ─────────────────────────────────────────────────────────────
 const QUICK_REPLIES = ["Расскажите подробнее", "Когда удобно созвониться?", "Спасибо за ответ!"];
@@ -1195,7 +1235,7 @@ function ChatScreen({ neg, role, onBack, onSend, onInterview, onInterviewRespons
     onAction(action);
   };
 
-  const chipColor = STATE_COLOR[neg.state] || C.muted;
+  const chipColor = stateColor()[neg.state] || C.muted;
   const chipLabel = STATE_LABEL[neg.state];
 
   return (
@@ -1434,7 +1474,7 @@ function ChatScreen({ neg, role, onBack, onSend, onInterview, onInterviewRespons
       <div style={{
         display: "flex", alignItems: "flex-end", gap: 8,
         padding: "10px 16px 14px",
-        borderTop: `1px solid ${C.line}`, background: "#fff", flexShrink: 0,
+        borderTop: `1px solid ${C.line}`, background: C.nav, flexShrink: 0,
       }}>
         {/* кнопка вложения */}
         <button onClick={handleAttach} style={{
@@ -1829,7 +1869,7 @@ function ChatsPlaceholder({ negotiations = [], onOpenChat }) {
             <div style={{ padding: "8px 0" }}>
               {dialogList.map((neg) => {
                 const lastMsg = neg.messages[neg.messages.length - 1];
-                const chipColor = STATE_COLOR[neg.state] || C.muted;
+                const chipColor = stateColor()[neg.state] || C.muted;
                 const chipLabel = STATE_LABEL[neg.state];
                 return (
                   <button key={neg.id} onClick={() => onOpenChat(neg)} style={{
@@ -1963,7 +2003,7 @@ function ModerationBadge({ status }) {
 }
 
 // ─── Profile screen ───────────────────────────────────────────────────────────
-function ProfileScreen({ user, role, userSkills, onSkillsChange }) {
+function ProfileScreen({ user, role, userSkills, onSkillsChange, isDark, onToggleTheme }) {
   const isSeeker = role === "seeker";
   const roleColor = isSeeker ? C.brand : C.apply;
   const [query, setQuery] = useState("");
@@ -1981,7 +2021,7 @@ function ProfileScreen({ user, role, userSkills, onSkillsChange }) {
   const removeSkill = (id) => onSkillsChange(userSkills.filter((s) => s !== id));
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: C.paper, overflowY: "auto" }}>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: C.paper, overflowY: "auto", transition: "background .25s" }}>
 
       {/* Шапка профиля */}
       <div style={{
@@ -2108,15 +2148,47 @@ function ProfileScreen({ user, role, userSkills, onSkillsChange }) {
             {DICT_AREAS.map((a) => (
               <span key={a.id} style={{
                 fontSize: 13, fontWeight: 600, padding: "6px 14px", borderRadius: 20,
-                border: `1.5px solid ${C.line}`, background: "#fff", color: C.muted,
+                border: `1.5px solid ${C.line}`, background: C.card, color: C.muted,
               }}>
                 {a.name}
               </span>
             ))}
           </div>
-          <p style={{ margin: "8px 0 0", fontSize: 12, color: C.muted }}>
-            Фильтр по городу — в Фазе 3.2
-          </p>
+        </div>
+
+        {/* Оформление */}
+        <div>
+          <h3 style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 800, color: C.ink }}>Оформление</h3>
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "14px 16px", background: C.card,
+            borderRadius: 14, border: `1.5px solid ${C.line}`,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 20 }}>{isDark ? "🌙" : "☀️"}</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>
+                  {isDark ? "Тёмная тема" : "Светлая тема"}
+                </div>
+                <div style={{ fontSize: 12, color: C.muted }}>
+                  {isDark ? "Включена тёмная тема" : "Включена светлая тема"}
+                </div>
+              </div>
+            </div>
+            {/* Toggle switch */}
+            <button onClick={onToggleTheme} style={{
+              width: 48, height: 28, borderRadius: 14, border: "none", cursor: "pointer",
+              background: isDark ? C.brand : C.line,
+              position: "relative", transition: "background .2s", flexShrink: 0,
+            }}>
+              <div style={{
+                position: "absolute", top: 3, left: isDark ? 23 : 3,
+                width: 22, height: 22, borderRadius: "50%", background: "#fff",
+                boxShadow: "0 1px 4px rgba(0,0,0,.25)",
+                transition: "left .2s",
+              }} />
+            </button>
+          </div>
         </div>
       </div>
     </div>
